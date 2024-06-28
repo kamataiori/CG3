@@ -565,7 +565,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//ウィンドウプロシージャ
 	wc.lpfnWndProc = WindowProc;
 	//ウィンドウクラス名(なんでも良い)
-	wc.lpszClassName = L"CG2WindowClass";
+	wc.lpszClassName = L"CG3WindowClass";
 	//インスタンスハンドル
 	wc.hInstance = GetModuleHandle(nullptr);
 	//カーソル
@@ -578,6 +578,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	const int32_t kClientWidth = 1280;
 	const int32_t kClientHeight = 720;
 
+	///
+
 	//ウィンドウサイズを表す構造体にクライアント領域を入れる
 	RECT wrc = { 0,0,kClientWidth,kClientHeight };
 
@@ -587,7 +589,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//ウィンドウの生成
 	HWND hwnd = CreateWindow(
 		wc.lpszClassName,          //利用するクラス名
-		L"CG2",                    //タイトルバーの文字(何でも良い)
+		L"CG3",                    //タイトルバーの文字(何でも良い)
 		WS_OVERLAPPEDWINDOW,       //よく見るウィンドウスタイル
 		CW_USEDEFAULT,             //表示X座標（Windowsに任せる）
 		CW_USEDEFAULT,             //表示Y座標（WindowsOSに任せる）
@@ -1364,14 +1366,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::End();
 
 			ImGui::Begin("BlendMode");
-			const char* items[] = { "kBlendModeNone", "kBlendModeNormal", "kBlendModeAdd", "kBlendModeSubtract", "kBlendModeMultiply", "kBlendModeScreen", "kCountOfBlendMode" };
-			static int current_item = kBlendModeNormal; // 初期値をkBlendModeNormalに設定
+			//const char* items[] = { "kBlendModeNone", "kBlendModeNormal", "kBlendModeAdd", "kBlendModeSubtract", "kBlendModeMultiply", "kBlendModeScreen", "kCountOfBlendMode" };
+			//static int current_item = kBlendModeNormal; // 初期値をkBlendModeNormalに設定
 
-			if (ImGui::Combo("##combo", &current_item, items, IM_ARRAYSIZE(items))) {
-				// current_itemは選択された項目のインデックスになります
-				// これをBlendMode型の値にキャストします
-				BlendMode mode = static_cast<BlendMode>(current_item);
-			}
+			//if (ImGui::Combo("##combo", &current_item, items, IM_ARRAYSIZE(items))) {
+			//	// current_itemは選択された項目のインデックスになります
+			//	// これをBlendMode型の値にキャストします
+			//	BlendMode mode = static_cast<BlendMode>(current_item);
+			//}
 
 			ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
 			ImGui::End();
