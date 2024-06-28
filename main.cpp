@@ -954,6 +954,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(pixelShaderBlob != nullptr);
 
 
+
 	////=========DepthStencilStateの設定を行う=========////
 
 	//DepthStencilStateの設定
