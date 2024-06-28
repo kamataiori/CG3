@@ -48,8 +48,25 @@ PixelShaderOutput main(VertexShaderOutput input)
    // output.color = gMaterial.color * textureColor;
     float4 transformedUV = mul(float4(input.texcoord,0.0f, 1.0f), gMaterial.uvTransform);
     float4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
+    //textureのα値が0.5以下のときにPixelを棄却
+    if(textureColor.a <= 0.5)
+    {
+        discard;
+    }
+    //textureのα値が0のときにPixelを棄却
+    if(textureColor.a == 0.0)
+    {
+        discard;
+    }
+    
     
     PixelShaderOutput output;
+    
+    //Textureのα値が0のときにPixelを棄却
+    if(output.color.a == 0.0)
+    {
+        discard;
+    }
     
     //////=========Lightingの計算を行う=========////
 
