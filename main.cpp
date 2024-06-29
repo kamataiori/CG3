@@ -476,7 +476,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 		{
 			Vector2 texcord;
 			s >> texcord.x >> texcord.y;
-			texcord.y = 1.0f - texcord.y;
+			//texcord.y = 1.0f - texcord.y;
 			texcord.x = 1.0f - texcord.x;
 			texcords.push_back(texcord);
 		}
@@ -762,9 +762,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	int  SphreVertex = 32 * 32 * 6;
 
 	//モデル読み込み
-	//ModelData modelData = LoadObjFile("Resources", "plane.obj");
+	ModelData modelData = LoadObjFile("Resources", "plane.obj");
 	//ModelData modelData = LoadObjFile("Resources", "axis.obj");
-	ModelData modelData = LoadObjFile("Resources", "fence.obj");
+	//ModelData modelData = LoadObjFile("Resources", "fence.obj");
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
 
