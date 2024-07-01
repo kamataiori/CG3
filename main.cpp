@@ -762,7 +762,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	int  SphreVertex = 32 * 32 * 6;
 
 	//モデル読み込み
-	ModelData modelData = LoadObjFile("Resources", "plane.obj");
+
+	ModelData modelData;
+
+
+	//ModelData modelData = LoadObjFile("Resources", "plane.obj");
 	//ModelData modelData = LoadObjFile("Resources", "axis.obj");
 	//ModelData modelData = LoadObjFile("Resources", "fence.obj");
 
