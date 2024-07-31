@@ -1365,6 +1365,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector4 color = { 1,1,1,1 };
 
 
+
 	//メインループ
 	//ウィンドウの×ボタンが押されるまでループ
 	while (msg.message != WM_QUIT) {
