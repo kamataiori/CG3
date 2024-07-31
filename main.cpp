@@ -1364,7 +1364,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	bool useMonsterBall = true;
 	Vector4 color = { 1,1,1,1 };
 
-
+	///
 
 	//メインループ
 	//ウィンドウの×ボタンが押されるまでループ
