@@ -6,6 +6,7 @@
 #include <cassert>
 #define _USE_MATH_DEFINES
 #include "math.h"
+#include <random>
 #include <fstream>
 #include <sstream>
 #include "wrl.h"
@@ -129,6 +130,13 @@ struct ModelData {
 	MaterialData material;
 };
 
+//Particle構造体
+struct Particle {
+	Transform transform;
+	Vector3 velocity;
+	Vector4 color;
+};
+
 //BlendMode
 enum BlendMode {
 	//!< ブレンドなし
@@ -146,8 +154,12 @@ enum BlendMode {
 	// 利用してはいけない
 	kCountOfBlendMode,
 };
-
 BlendMode mode = kBlendModeNormal;
+
+//乱数生成器の初期化
+std::random_device seedGenerator;
+std::mt19937 randomEngine(seedGenerator());
+
 
 static const int kWindowWidth = 1280;
 static const int kWindowHeight = 720;
@@ -530,6 +542,25 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 
 	//4,ModelDataを返す
 	return modelData;
+}
+
+
+////////=========Particle生成関数=========////
+
+Particle MakeNewParticle(std::mt19937& randomEngine)
+{
+	//一様分布生成器を使って乱数を生成
+	std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> distColor(0.0f, 1.0f);
+
+	Particle particle;
+	
+	particle.transform.scale = { 1.0f,1.0f,1.0f };
+	particle.transform.rotate = { 0.0f,0.0f,0.0f };
+	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
+	particle.velocity = { distribution(randomEngine),distribution(randomEngine),distribution(randomEngine) };
+	particle.color = { distColor(randomEngine),distColor(randomEngine) ,distColor(randomEngine) ,1.0f };
+	return particle;
 }
 
 
@@ -1256,13 +1287,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Transform変数を作る
 	//Transform transform{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
 
-	Transform transforms[kNumInstance];
+	Particle particles[kNumInstance];
 	for (uint32_t index = 0; index < kNumInstance; ++index)
 	{
-		transforms[index].scale = { 1.0f,1.0f,1.0f };
-		transforms[index].rotate = { 0.0f,0.0f,0.0f };
-		transforms[index].translate = { index * 0.1f,index * 0.1f, index * 0.1f };
+		particles[index] = MakeNewParticle(randomEngine);
 	}
+
+	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
+	const float kDeltaTime = 1.0f / 60.0f;
 
 
 	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,1.0f,10.0f} };
@@ -1395,7 +1427,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 			for (uint32_t index = 0; index < kNumInstance; ++index)
 			{
-				Matrix4x4 worldMatrix = MakeAffineMatrix(transforms[index].scale, transforms[index].rotate, transforms[index].translate);
+				particles[index].transform.translate = Add(particles[index].transform.translate ,Multiply(kDeltaTime,particles[index].velocity));
+				Matrix4x4 worldMatrix = MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate);
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
 				instancingData[index].WVP = worldviewProjectionMatrix;
 				instancingData[index].World = worldMatrix;
