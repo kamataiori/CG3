@@ -137,6 +137,13 @@ struct Particle {
 	Vector4 color;
 };
 
+struct ParticleForGPU
+{
+	Matrix4x4 WVP;
+	Matrix4x4 World;
+	Vector4 color;
+};
+
 //BlendMode
 enum BlendMode {
 	//!< ブレンドなし
@@ -554,7 +561,7 @@ Particle MakeNewParticle(std::mt19937& randomEngine)
 	std::uniform_real_distribution<float> distColor(0.0f, 1.0f);
 
 	Particle particle;
-	
+
 	particle.transform.scale = { 1.0f,1.0f,1.0f };
 	particle.transform.rotate = { 0.0f,0.0f,0.0f };
 	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
@@ -788,7 +795,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = swapChain->GetBuffer(1, IID_PPV_ARGS(&swapChainResources[1]));
 	assert(SUCCEEDED(hr));
 
-	
+
 
 	//球
 	//ID3D12Resource* vertexResource = CreateBufferResource(device, sizeof(VertexData) * SphreVertex);
@@ -1123,6 +1130,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 
+	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource2 = CreateBufferResource(device, sizeof(ParticleForGPU) * kNumInstance);
+	ParticleForGPU* instancingData2 = nullptr;
+	instancingResource->Map(0, nullptr, reinterpret_cast<void**>(&instancingData2));
+	for (uint32_t index = 0; index < kNumInstance; ++index)
+	{
+		instancingData2[index].WVP = MakeIdentity4x4();
+		instancingData2[index].World = MakeIdentity4x4();
+		instancingData2[index].color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+
+
+
 
 	//Resourceを作成
 	Microsoft::WRL::ComPtr<ID3D12Resource> startResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 32 * 32 * 6);
@@ -1291,6 +1311,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	for (uint32_t index = 0; index < kNumInstance; ++index)
 	{
 		particles[index] = MakeNewParticle(randomEngine);
+		instancingData2[index].color = particles[index].color;
 	}
 
 	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
@@ -1370,7 +1391,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	instancingSrvDesc.Buffer.FirstElement = 0;
 	instancingSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 	instancingSrvDesc.Buffer.NumElements = kNumInstance;
-	instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	//instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	instancingSrvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
+
 
 	//SRVを作成するDescriptorHeapの場所を決める
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 0);//srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
@@ -1392,6 +1415,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 	device->CreateShaderResourceView(instancingResource.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
+	device->CreateShaderResourceView(instancingResource2.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
+
 
 	bool useMonsterBall = true;
 	Vector4 color = { 1,1,1,1 };
@@ -1427,7 +1452,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 			for (uint32_t index = 0; index < kNumInstance; ++index)
 			{
-				particles[index].transform.translate = Add(particles[index].transform.translate ,Multiply(kDeltaTime,particles[index].velocity));
+				particles[index].transform.translate = Add(particles[index].transform.translate, Multiply(kDeltaTime, particles[index].velocity));
 				Matrix4x4 worldMatrix = MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate);
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
 				instancingData[index].WVP = worldviewProjectionMatrix;

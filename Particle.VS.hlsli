@@ -14,12 +14,7 @@ struct TransformationMatrix
 TransformationMatrix gTransformationMatrices[10];
 
 
-StructuredBuffer<TransformationMatrix> gTransformationMatrix : register(t0);
-
-//struct VertexShaderOutput
-//{
-//	float32_t4 position : SV_POSITION;
-//};
+//StructuredBuffer<TransformationMatrix> gTransformationMatrix : register(t0);
 
 struct VertexShaderInput
 {
@@ -28,12 +23,22 @@ struct VertexShaderInput
     float3 normal : NORMAL0;
 };
 
-//struct VertexShaderOutput
-//{
-//    float4 position : SV_POSITION;
-//    float2 texcoord : TEXCOORD0;
-//    float3 normal : NORMAL0;
-//};
+struct ParticleForGPU
+{
+    float4x4 WVP;
+    float4x4 World;
+    float4 color;
+};
+
+StructuredBuffer<ParticleForGPU> gParticle : register(t0);
+
+struct VertexShaderOutput
+{
+    float4 position : SV_POSITION;
+    float2 texcoord : TEXCOORD0;
+    //float3 normal : NORMAL0;
+    float4 color : COLOR0;
+};
 
 
 VertexShaderOutput main(VertexShaderInput input,uint32_t instanceId : SV_InstanceID)
@@ -46,38 +51,8 @@ VertexShaderOutput main(VertexShaderInput input,uint32_t instanceId : SV_Instanc
     //////=========法線の座標系を変換してPixelShaderに送る=========////
 
     output.normal = normalize(mul(input.normal, (float3x3) gTransformationMatrix[instanceId].World));
+    
+    output.color = gParticle[instanceId].color;
 
     return output;
 }
-
-
-
-
-//float4 main(float4 pos : POSITION) : SV_POSITION
-//{
-//    return pos;
-//}
-
-//struct TransformationMatrix
-//{
-//    float4 WVP;
-//};
-//ConstantBuffer<TransformationMatrix> gTransformationMatrix : register(b0);
-
-//struct VertexShaderOutput
-//{
-//    float4 position : SV_POSITION;
-//};
-
-//struct VertexShaderInput
-//{
-//    float4 position : POSITION0;
-//};
-
-//VertexShaderOutput main(VertexShaderInput input)
-//{
-//    VertexShaderOutput output;
-//    //output.position = input.position;
-//    output.position = mul(input.position, gTransformationMatrix.WVP);
-//    return output;
-//}
