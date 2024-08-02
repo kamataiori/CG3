@@ -135,6 +135,8 @@ struct Particle {
 	Transform transform;
 	Vector3 velocity;
 	Vector4 color;
+	float lifeTime;
+	float currentTime;
 };
 
 struct ParticleForGPU
@@ -559,6 +561,7 @@ Particle MakeNewParticle(std::mt19937& randomEngine)
 	//一様分布生成器を使って乱数を生成
 	std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
 	std::uniform_real_distribution<float> distColor(0.0f, 1.0f);
+	std::uniform_real_distribution<float> distTime(1.0f, 3.0f);
 
 	Particle particle;
 
@@ -567,6 +570,8 @@ Particle MakeNewParticle(std::mt19937& randomEngine)
 	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
 	particle.velocity = { distribution(randomEngine),distribution(randomEngine),distribution(randomEngine) };
 	particle.color = { distColor(randomEngine),distColor(randomEngine) ,distColor(randomEngine) ,1.0f };
+	particle.lifeTime = distTime(randomEngine);
+	particle.currentTime = 0;
 	return particle;
 }
 
@@ -1129,11 +1134,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		instancingData[index].World = MakeIdentity4x4();
 	}
 
-
-	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource2 = CreateBufferResource(device, sizeof(ParticleForGPU) * kNumInstance);
+	const uint32_t kNumMaxInstance = 10;
+	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource2 = CreateBufferResource(device, sizeof(ParticleForGPU) * kNumMaxInstance);
 	ParticleForGPU* instancingData2 = nullptr;
 	instancingResource2->Map(0, nullptr, reinterpret_cast<void**>(&instancingData2));
-	for (uint32_t index = 0; index < kNumInstance; ++index)
+	for (uint32_t index = 0; index < kNumMaxInstance; ++index)
 	{
 		instancingData2[index].WVP = MakeIdentity4x4();
 		instancingData2[index].World = MakeIdentity4x4();
@@ -1313,7 +1318,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	for (uint32_t index = 0; index < kNumInstance; ++index)
 	{
 		particles[index] = MakeNewParticle(randomEngine);
-		instancingData2[index].color = particles[index].color;
+		//instancingData2[index].color = particles[index].color;
 	}
 
 	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
@@ -1462,13 +1467,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 			Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-			for (uint32_t index = 0; index < kNumInstance; ++index)
+			uint32_t numInstance = 0;  //描画すべきインスタンス数
+			for (uint32_t index = 0; index < kNumMaxInstance; ++index)
 			{
+				if (particles[index].lifeTime <= particles[index].currentTime)
+				{
+					//生存期間を過ぎていたら更新せず描画対象にしない
+					continue;
+				}
 				particles[index].transform.translate = Add(particles[index].transform.translate, Multiply(kDeltaTime, particles[index].velocity));
+				particles[index].currentTime += kDeltaTime; //経過時間を足す
 				Matrix4x4 worldMatrix = MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate);
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
-				instancingData2[index].WVP = worldviewProjectionMatrix;
-				instancingData2[index].World = worldMatrix;
+				instancingData2[numInstance].WVP = worldviewProjectionMatrix;
+				instancingData2[numInstance].World = worldMatrix;
+				instancingData2[numInstance].color = particles[index].color;
+				//生きているParticleの数を1つカウントする
+				++numInstance;
 				ImGui::Begin("particle");
 				ImGui::DragFloat3("transform", &particles[index].transform.translate.x, 0.01f);
 				ImGui::End();
@@ -1616,7 +1631,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//モデル
 			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
-			commandList->DrawInstanced(6, kNumInstance, 0, 0);
+			
+			//commandList->DrawInstanced(6, kNumInstance, 0, 0);
+			//消えるようにするため↓に変更
+			commandList->DrawInstanced(6, numInstance, 0, 0);
 
 
 			//////=========Spriteの描画コマンドを積む=========////
