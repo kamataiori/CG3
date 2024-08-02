@@ -7,6 +7,7 @@
 #define _USE_MATH_DEFINES
 #include "math.h"
 #include <random>
+#include <numbers>
 #include <fstream>
 #include <sstream>
 #include "wrl.h"
@@ -1213,10 +1214,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	
+
 
 	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	modelData.material.textureFilePath = "./Resources/circle.png"; 
+	modelData.material.textureFilePath = "./Resources/circle.png";
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
 
@@ -1344,7 +1345,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	const float kDeltaTime = 1.0f / 60.0f;
 
 
-	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
+	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
+
+	//常にカメラ目線
+	Transform cameraTransform{ {1.0f,1.0f,1.0f},{std::numbers::pi_v<float> / 3.0f,std::numbers::pi_v<float>,0.0f},{0.0f,23.0f,10.0f} };
+
 
 	//CPUで動かす用のTransformを作る
 	Transform transformSprite{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
@@ -1355,7 +1360,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		{0.0f,0.0f,0.0f},
 		{0.0f,0.0f,0.0f},
 	};
-
 
 
 	//////=========Imguiの初期化=========////
@@ -1456,6 +1460,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	bool useMonsterBall = true;
 	Vector4 color = { 1,1,1,1 };
+	bool usebillboardMatrix = true;
 
 	///
 
@@ -1487,6 +1492,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 			Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 
+			//=====常にカメラ目線======//
+			//表面がカメラの方を向くようにする
+			Matrix4x4 backToFrontMatrix = MakeRotateYMatrix(std::numbers::pi_v<float>);
+			//カメラの回転を適用する
+			Matrix4x4 billboardMatrix{};
+			if (usebillboardMatrix)
+			{
+				billboardMatrix = Multiply(backToFrontMatrix, cameraMatrix);
+				billboardMatrix.m[3][0] = 0.0f;  //平行移動成分はいらない
+				billboardMatrix.m[3][1] = 0.0f;
+				billboardMatrix.m[3][2] = 0.0f;
+			}
+			else if (usebillboardMatrix == false)
+			{
+				billboardMatrix = MakeIdentity4x4();
+			}
+
+
 			//-----------------------------------描画順について-----------------------------------//
 			//ParticleはDepthを書かないため、先に描画すると、3Dオブジェクトにすべて上書きされてしまう
 			//基本後ろ側のものが先に書かれていた方が良い
@@ -1503,7 +1526,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 				particles[index].transform.translate = Add(particles[index].transform.translate, Multiply(kDeltaTime, particles[index].velocity));
 				particles[index].currentTime += kDeltaTime; //経過時間を足す
-				Matrix4x4 worldMatrix = MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate);
+				Matrix4x4 worldMatrix =Multiply(billboardMatrix ,MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate));
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
 				instancingData2[numInstance].WVP = worldviewProjectionMatrix;
 				instancingData2[numInstance].World = worldMatrix;
@@ -1552,8 +1575,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
-			ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
-			directionalLightData->direction = Normalize(directionalLightData->direction);
+			ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
+			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
+			directionalLightData->direction = Normalize(directionalLightData->direction);*/
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
 			//ImGui::Checkbox("useMonsterBall", &useMonsterBall);
 			ImGui::End();
@@ -1660,7 +1684,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//モデル
 			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
-			
+
 			//commandList->DrawInstanced(6, kNumInstance, 0, 0);
 			//消えるようにするため↓に変更
 			commandList->DrawInstanced(6, numInstance, 0, 0);
