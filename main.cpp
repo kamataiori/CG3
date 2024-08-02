@@ -318,7 +318,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateTextureResource(Microsoft::WRL::Com
 	//1.metadataを基にResourceの設定
 	D3D12_RESOURCE_DESC resorceDesc{};
 	resorceDesc.Width = UINT(metadata.width);  //Textureの幅
-	resorceDesc.Height = UINT(metadata.height);  //TExtureの高さ
+	resorceDesc.Height = UINT(metadata.height);  //Textureの高さ
 	resorceDesc.MipLevels = UINT16(metadata.mipLevels);  //mipmapの数
 	resorceDesc.DepthOrArraySize = UINT16(metadata.arraySize);  //奥行き　or 配列Textureの配列数
 	resorceDesc.Format = metadata.format;  //TextureのFormat
@@ -1132,7 +1132,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource2 = CreateBufferResource(device, sizeof(ParticleForGPU) * kNumInstance);
 	ParticleForGPU* instancingData2 = nullptr;
-	instancingResource->Map(0, nullptr, reinterpret_cast<void**>(&instancingData2));
+	instancingResource2->Map(0, nullptr, reinterpret_cast<void**>(&instancingData2));
 	for (uint32_t index = 0; index < kNumInstance; ++index)
 	{
 		instancingData2[index].WVP = MakeIdentity4x4();
@@ -1467,8 +1467,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				particles[index].transform.translate = Add(particles[index].transform.translate, Multiply(kDeltaTime, particles[index].velocity));
 				Matrix4x4 worldMatrix = MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate);
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
-				instancingData[index].WVP = worldviewProjectionMatrix;
-				instancingData[index].World = worldMatrix;
+				instancingData2[index].WVP = worldviewProjectionMatrix;
+				instancingData2[index].World = worldMatrix;
 				ImGui::Begin("particle");
 				ImGui::DragFloat3("transform", &particles[index].transform.translate.x, 0.01f);
 				ImGui::End();
