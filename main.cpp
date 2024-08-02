@@ -1461,6 +1461,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	bool useMonsterBall = true;
 	Vector4 color = { 1,1,1,1 };
 	bool usebillboardMatrix = true;
+	bool isParticleAlive = false;
 
 	///
 
@@ -1576,6 +1577,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
 			ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
+			//ImGui::Checkbox("isParticleAlive", &isParticleAlive);
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
