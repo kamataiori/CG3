@@ -32,25 +32,24 @@ struct ParticleForGPU
 
 StructuredBuffer<ParticleForGPU> gParticle : register(t0);
 
-struct VertexShaderOutput
-{
-    float4 position : SV_POSITION;
-    float2 texcoord : TEXCOORD0;
-    //float3 normal : NORMAL0;
-    float4 color : COLOR0;
-};
+//struct VertexShaderInput
+//{
+//    float4 position : SV_POSITION;
+//    float2 texcoord : TEXCOORD0;
+//    float3 normal : NORMAL0;
+//};
 
 
-VertexShaderOutput main(VertexShaderInput input,uint32_t instanceId : SV_InstanceID)
+VertexShaderOutput main(VertexShaderInput input,uint instanceId : SV_InstanceID)
 {
     VertexShaderOutput output;
     //output.position = input.position;
-    output.position = mul(input.position, gTransformationMatrix[instanceId].WVP);
+    output.position = mul(input.position, gParticle[instanceId].WVP);
     output.texcoord = input.texcoord;
     
     //////=========法線の座標系を変換してPixelShaderに送る=========////
 
-    output.normal = normalize(mul(input.normal, (float3x3) gTransformationMatrix[instanceId].World));
+    output.normal = normalize(mul(input.normal, (float3x3) gParticle[instanceId].World));
     
     output.color = gParticle[instanceId].color;
 

@@ -1190,6 +1190,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	
+
 	modelData.material.textureFilePath = "./Resources/uvChecker.png";
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
@@ -1318,7 +1320,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	const float kDeltaTime = 1.0f / 60.0f;
 
 
-	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,1.0f,10.0f} };
+	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
 
 	//CPUで動かす用のTransformを作る
 	Transform transformSprite{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
@@ -1391,8 +1393,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	instancingSrvDesc.Buffer.FirstElement = 0;
 	instancingSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 	instancingSrvDesc.Buffer.NumElements = kNumInstance;
-	//instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
-	instancingSrvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
+	instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	//instancingSrvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC instancingSrvDesc2{};
+	instancingSrvDesc2.Format = DXGI_FORMAT_UNKNOWN;
+	instancingSrvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	instancingSrvDesc2.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	instancingSrvDesc2.Buffer.FirstElement = 0;
+	instancingSrvDesc2.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	instancingSrvDesc2.Buffer.NumElements = kNumInstance;
+	//instancingSrvDesc2.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	instancingSrvDesc2.Buffer.StructureByteStride = sizeof(ParticleForGPU);
 
 
 	//SRVを作成するDescriptorHeapの場所を決める
@@ -1415,7 +1427,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 	device->CreateShaderResourceView(instancingResource.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
-	device->CreateShaderResourceView(instancingResource2.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
+	device->CreateShaderResourceView(instancingResource2.Get(), &instancingSrvDesc2, instancingSrvHandleCPU);
 
 
 	bool useMonsterBall = true;
@@ -1457,6 +1469,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
 				instancingData[index].WVP = worldviewProjectionMatrix;
 				instancingData[index].World = worldMatrix;
+				ImGui::Begin("particle");
+				ImGui::DragFloat3("transform", &particles[index].transform.translate.x, 0.01f);
+				ImGui::End();
 			}
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
@@ -1490,7 +1505,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::Begin("Window");
 			//ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
 			//ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);
-			ImGui::DragFloat3("CameraTranslate", &cameraTransform.scale.x, 0.01f);
+			ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
 			ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
