@@ -147,6 +147,13 @@ struct ParticleForGPU
 	Vector4 color;
 };
 
+struct Emitter {
+	Transform transform;
+	uint32_t count;  //発生数
+	float frequency;  //発生頻度
+	float frequencyTime;  //頻度用時刻
+};
+
 //BlendMode
 enum BlendMode {
 	//!< ブレンドなし
@@ -575,6 +582,19 @@ Particle MakeNewParticle(std::mt19937& randomEngine)
 	particle.currentTime = 0;
 	return particle;
 }
+
+////////=========EmitterからParticleを発生させる関数=========////
+
+std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
+{
+	std::list<Particle> particles;
+	for (uint32_t count = 0; count < emitter.count; ++count)
+	{
+		particles.push_back(MakeNewParticle(randomEngine));
+	}
+	return particles;
+}
+
 
 
 
@@ -1153,7 +1173,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		instancingData[index].World = MakeIdentity4x4();
 	}
 
-	const uint32_t kNumMaxInstance = 10;
+	const uint32_t kNumMaxInstance = 100;
 	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource2 = CreateBufferResource(device, sizeof(ParticleForGPU) * kNumMaxInstance);
 	ParticleForGPU* instancingData2 = nullptr;
 	instancingResource2->Map(0, nullptr, reinterpret_cast<void**>(&instancingData2));
@@ -1334,15 +1354,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Transform変数を作る
 	//Transform transform{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
 
-	Particle particles[kNumInstance];
+	//Particle particles[kNumInstance];
+	std::list<Particle> particles;
 	for (uint32_t index = 0; index < kNumInstance; ++index)
 	{
-		particles[index] = MakeNewParticle(randomEngine);
+		//particles[index] = MakeNewParticle(randomEngine);
 		//instancingData2[index].color = particles[index].color;
+		particles.push_back(MakeNewParticle(randomEngine));
+		particles.push_back(MakeNewParticle(randomEngine));
+		particles.push_back(MakeNewParticle(randomEngine));
 	}
 
 	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
 	const float kDeltaTime = 1.0f / 60.0f;
+
+
+	//エミッタ-
+	Emitter emitter{};
+	emitter.count = 3;
+	//0.5秒ごとに発生
+	emitter.frequency = 0.5f;
+	//発生頻度用の時刻、0で初期化
+	emitter.frequencyTime = 0.0f;
 
 
 	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
@@ -1517,28 +1550,53 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//これらを加味すると現状は...
 			//1,3Dオブジェクト   2,Particleの順で描画すると良い
 
-			uint32_t numInstance = 0;  //描画すべきインスタンス数
-			for (uint32_t index = 0; index < kNumMaxInstance; ++index)
+
+			////==========エミッター更新==========////
+
+			emitter.frequencyTime += kDeltaTime;  // 時刻を進める
+			if (emitter.frequency <= emitter.frequencyTime)
 			{
-				if (particles[index].lifeTime <= particles[index].currentTime)
+				//頻度より大きいなら発生
+				particles.splice(particles.end(), Emit(emitter, randomEngine));  //発生処理
+				emitter.frequencyTime -= emitter.frequency;  //余計に過ぎた時間も加味して頻度計算する
+			}
+
+
+
+
+
+
+			////==========パーティクル更新==========////
+
+			uint32_t numInstance = 0;  //描画すべきインスタンス数
+			for (std::list<Particle>::iterator particleIterator = particles.begin(); particleIterator != particles.end();)
+			{
+				if ((*particleIterator).lifeTime <= (*particleIterator).currentTime)
 				{
+					//生存期間が過ぎたParticleはlistから消す。戻り値が次のイテレータとなる
+					particleIterator = particles.erase(particleIterator);
 					//生存期間を過ぎていたら更新せず描画対象にしない
 					continue;
 				}
-				particles[index].transform.translate = Add(particles[index].transform.translate, Multiply(kDeltaTime, particles[index].velocity));
-				particles[index].currentTime += kDeltaTime; //経過時間を足す
-				Matrix4x4 worldMatrix =Multiply(billboardMatrix ,MakeAffineMatrix(particles[index].transform.scale, particles[index].transform.rotate, particles[index].transform.translate));
-				Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
-				instancingData2[numInstance].WVP = worldviewProjectionMatrix;
-				instancingData2[numInstance].World = worldMatrix;
-				//徐々に消す
-				float alpha = 1.0f - (particles[index].currentTime / particles[index].lifeTime);
-				instancingData2[numInstance].color = particles[index].color;
-				instancingData2[numInstance].color.w = alpha;
-				//生きているParticleの数を1つカウントする
-				++numInstance;
+				if (numInstance < kNumMaxInstance)
+				{
+					(*particleIterator).transform.translate = Add((*particleIterator).transform.translate, Multiply(kDeltaTime, (*particleIterator).velocity));
+					(*particleIterator).currentTime += kDeltaTime; //経過時間を足す
+					Matrix4x4 worldMatrix = Multiply(billboardMatrix, MakeAffineMatrix((*particleIterator).transform.scale, (*particleIterator).transform.rotate, (*particleIterator).transform.translate));
+					Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
+					instancingData2[numInstance].WVP = worldviewProjectionMatrix;
+					instancingData2[numInstance].World = worldMatrix;
+					//徐々に消す
+					float alpha = 1.0f - ((*particleIterator).currentTime / (*particleIterator).lifeTime);
+					instancingData2[numInstance].color = (*particleIterator).color;
+					instancingData2[numInstance].color.w = alpha;
+					//生きているParticleの数を1つカウントする
+					++numInstance;
+				}
+				//次のイテレータに進める
+				++particleIterator;
 				ImGui::Begin("particle");
-				ImGui::DragFloat3("transform", &particles[index].transform.translate.x, 0.01f);
+				ImGui::DragFloat3("transform", &(*particleIterator).transform.translate.x, 0.01f);
 				ImGui::End();
 			}
 			//*wvpData = worldMatrix;
@@ -1577,6 +1635,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
 			ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
+			if (ImGui::Button("Add Particle"))
+			{
+				particles.splice(particles.end(), Emit(emitter, randomEngine));
+				particles.push_back(MakeNewParticle(randomEngine));
+				particles.push_back(MakeNewParticle(randomEngine));
+				particles.push_back(MakeNewParticle(randomEngine));
+			}
 			//ImGui::Checkbox("isParticleAlive", &isParticleAlive);
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
