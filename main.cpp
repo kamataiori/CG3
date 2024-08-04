@@ -1356,7 +1356,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//Particle particles[kNumInstance];
 	std::list<Particle> particles;
-	for (uint32_t index = 0; index < kNumInstance; ++index)
+	for (uint32_t index = 0; index < kNumMaxInstance; ++index)
 	{
 		//particles[index] = MakeNewParticle(randomEngine);
 		//instancingData2[index].color = particles[index].color;
@@ -1594,10 +1594,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					++numInstance;
 				}
 				//次のイテレータに進める
-				++particleIterator;
-				ImGui::Begin("particle");
+				/*++particleIterator;*/
+				/*ImGui::Begin("particle");
 				ImGui::DragFloat3("transform", &(*particleIterator).transform.translate.x, 0.01f);
-				ImGui::End();
+				ImGui::End();*/
+				++particleIterator;
 			}
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
@@ -1638,9 +1639,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (ImGui::Button("Add Particle"))
 			{
 				particles.splice(particles.end(), Emit(emitter, randomEngine));
+				/*particles.push_back(MakeNewParticle(randomEngine));
 				particles.push_back(MakeNewParticle(randomEngine));
-				particles.push_back(MakeNewParticle(randomEngine));
-				particles.push_back(MakeNewParticle(randomEngine));
+				particles.push_back(MakeNewParticle(randomEngine));*/
 			}
 			//ImGui::Checkbox("isParticleAlive", &isParticleAlive);
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
