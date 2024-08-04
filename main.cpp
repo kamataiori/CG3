@@ -564,7 +564,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 
 ////////=========Particle生成関数=========////
 
-Particle MakeNewParticle(std::mt19937& randomEngine)
+Particle MakeNewParticle(std::mt19937& randomEngine,const Vector3& translate)
 {
 	//一様分布生成器を使って乱数を生成
 	std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
@@ -575,7 +575,9 @@ Particle MakeNewParticle(std::mt19937& randomEngine)
 
 	particle.transform.scale = { 1.0f,1.0f,1.0f };
 	particle.transform.rotate = { 0.0f,0.0f,0.0f };
-	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
+	Vector3 randomTranslate{ distribution(randomEngine),distribution(randomEngine) ,distribution(randomEngine) };
+	particle.transform.translate = Add(translate , randomTranslate);
+//	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
 	particle.velocity = { distribution(randomEngine),distribution(randomEngine),distribution(randomEngine) };
 	particle.color = { distColor(randomEngine),distColor(randomEngine) ,distColor(randomEngine) ,1.0f };
 	particle.lifeTime = distTime(randomEngine);
@@ -590,7 +592,7 @@ std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
 	std::list<Particle> particles;
 	for (uint32_t count = 0; count < emitter.count; ++count)
 	{
-		particles.push_back(MakeNewParticle(randomEngine));
+		particles.push_back(MakeNewParticle(randomEngine,emitter.transform.translate));
 	}
 	return particles;
 }
@@ -1354,21 +1356,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Transform変数を作る
 	//Transform transform{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
 
-	//Particle particles[kNumInstance];
-	std::list<Particle> particles;
-	for (uint32_t index = 0; index < kNumMaxInstance; ++index)
-	{
-		//particles[index] = MakeNewParticle(randomEngine);
-		//instancingData2[index].color = particles[index].color;
-		particles.push_back(MakeNewParticle(randomEngine));
-		particles.push_back(MakeNewParticle(randomEngine));
-		particles.push_back(MakeNewParticle(randomEngine));
-	}
-
-	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
-	const float kDeltaTime = 1.0f / 60.0f;
-
-
 	//エミッタ-
 	Emitter emitter{};
 	emitter.count = 3;
@@ -1376,6 +1363,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	emitter.frequency = 0.5f;
 	//発生頻度用の時刻、0で初期化
 	emitter.frequencyTime = 0.0f;
+
+	//とりあえず60fps固定してあるが、実時間を計測して可変fpsで動かせるようにしておくとなおよい
+	const float kDeltaTime = 1.0f / 60.0f;
+
+	emitter.transform.translate = { 0.0f,0.0f,0.0f };
+	emitter.transform.rotate = { 0.0f,0.0f,0.0f };
+	emitter.transform.scale = { 1.0f,1.0f,1.0f };
+
+
+	//Particle particles[kNumInstance];
+	std::list<Particle> particles;
+	for (uint32_t index = 0; index < kNumMaxInstance; ++index)
+	{
+		//particles[index] = MakeNewParticle(randomEngine);
+		//instancingData2[index].color = particles[index].color;
+		particles.push_back(MakeNewParticle(randomEngine,emitter.transform.translate));
+		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
+		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
+	}
 
 
 	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
@@ -1593,11 +1599,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					//生きているParticleの数を1つカウントする
 					++numInstance;
 				}
-				//次のイテレータに進める
 				/*++particleIterator;*/
 				/*ImGui::Begin("particle");
 				ImGui::DragFloat3("transform", &(*particleIterator).transform.translate.x, 0.01f);
 				ImGui::End();*/
+				//次のイテレータに進める
 				++particleIterator;
 			}
 			//*wvpData = worldMatrix;
@@ -1643,6 +1649,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				particles.push_back(MakeNewParticle(randomEngine));
 				particles.push_back(MakeNewParticle(randomEngine));*/
 			}
+			ImGui::DragFloat3("EmitterTranslate", &emitter.transform.translate.x, 0.01f, -100.0f, 100.0f);
 			//ImGui::Checkbox("isParticleAlive", &isParticleAlive);
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
