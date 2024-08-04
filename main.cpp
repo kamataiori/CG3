@@ -597,7 +597,7 @@ Particle MakeNewParticle(std::mt19937& randomEngine,const Vector3& translate)
 	return particle;
 }
 
-////////=========EmitterからParticleを発生させる関数=========////
+////=========EmitterからParticleを発生させる関数=========////
 
 std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
 {
@@ -608,6 +608,16 @@ std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
 	}
 	return particles;
 }
+
+////=========FieldとParticleの当たり判定関数=========////
+
+bool IsCollision(const AABB& aabb, const Vector3& point)
+{
+
+}
+
+
+
 
 
 
@@ -1394,6 +1404,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 	}
+
+	//Field
+	AccelerationField accelerationField;
+	accelerationField.acceleration = { 15.0f,0.0f,0.0f };
+	accelerationField.area.max = { -1.0f,-1.0f,-1.0f };
+	accelerationField.area.min = { 1.0f,1.0f,1.0f };
+
+	
 
 
 	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
