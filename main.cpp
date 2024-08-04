@@ -147,11 +147,23 @@ struct ParticleForGPU
 	Vector4 color;
 };
 
+//ParticleのEmitter構造体
 struct Emitter {
 	Transform transform;
 	uint32_t count;  //発生数
 	float frequency;  //発生頻度
 	float frequencyTime;  //頻度用時刻
+};
+
+struct AABB {
+	Vector3 min;//最小点
+	Vector3 max;//最大点
+};
+
+//ParticleのField構造体
+struct AccelerationField {
+	Vector3 acceleration;  //加速度
+	AABB area;  //範囲
 };
 
 //BlendMode
