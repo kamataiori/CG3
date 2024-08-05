@@ -576,7 +576,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 
 ////////=========Particle生成関数=========////
 
-Particle MakeNewParticle(std::mt19937& randomEngine,const Vector3& translate)
+Particle MakeNewParticle(std::mt19937& randomEngine, const Vector3& translate)
 {
 	//一様分布生成器を使って乱数を生成
 	std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
@@ -588,8 +588,8 @@ Particle MakeNewParticle(std::mt19937& randomEngine,const Vector3& translate)
 	particle.transform.scale = { 1.0f,1.0f,1.0f };
 	particle.transform.rotate = { 0.0f,0.0f,0.0f };
 	Vector3 randomTranslate{ distribution(randomEngine),distribution(randomEngine) ,distribution(randomEngine) };
-	particle.transform.translate = Add(translate , randomTranslate);
-//	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
+	particle.transform.translate = Add(translate, randomTranslate);
+	//	particle.transform.translate = { /*index * 0.1f*/distribution(randomEngine),distribution(randomEngine), distribution(randomEngine) };
 	particle.velocity = { distribution(randomEngine),distribution(randomEngine),distribution(randomEngine) };
 	particle.color = { distColor(randomEngine),distColor(randomEngine) ,distColor(randomEngine) ,1.0f };
 	particle.lifeTime = distTime(randomEngine);
@@ -604,7 +604,7 @@ std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
 	std::list<Particle> particles;
 	for (uint32_t count = 0; count < emitter.count; ++count)
 	{
-		particles.push_back(MakeNewParticle(randomEngine,emitter.transform.translate));
+		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 	}
 	return particles;
 }
@@ -613,12 +613,14 @@ std::list<Particle> Emit(const Emitter& emitter, std::mt19937& randomEngine)
 
 bool IsCollision(const AABB& aabb, const Vector3& point)
 {
-
+	// 点がAABBの内部にあるかどうかを判定する
+	if (point.x >= aabb.min.x && point.x <= aabb.max.x &&
+		point.y >= aabb.min.y && point.y <= aabb.max.y &&
+		point.z >= aabb.min.z && point.z <= aabb.max.z) {
+		return true;
+	}
+	return false;
 }
-
-
-
-
 
 
 
@@ -1400,7 +1402,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	{
 		//particles[index] = MakeNewParticle(randomEngine);
 		//instancingData2[index].color = particles[index].color;
-		particles.push_back(MakeNewParticle(randomEngine,emitter.transform.translate));
+		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 		particles.push_back(MakeNewParticle(randomEngine, emitter.transform.translate));
 	}
@@ -1408,10 +1410,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Field
 	AccelerationField accelerationField;
 	accelerationField.acceleration = { 15.0f,0.0f,0.0f };
-	accelerationField.area.max = { -1.0f,-1.0f,-1.0f };
-	accelerationField.area.min = { 1.0f,1.0f,1.0f };
+	accelerationField.area.max = { 1.0f,1.0f,1.0f };
+	accelerationField.area.min = { -1.0f,-1.0f,-1.0f };
 
-	
+
 
 
 	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
@@ -1531,6 +1533,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector4 color = { 1,1,1,1 };
 	bool usebillboardMatrix = true;
 	bool isParticleAlive = false;
+	bool FieldAcceleration = false;
 
 	///
 
@@ -1598,10 +1601,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 
-
-
-
-
 			////==========パーティクル更新==========////
 
 			uint32_t numInstance = 0;  //描画すべきインスタンス数
@@ -1616,7 +1615,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 				if (numInstance < kNumMaxInstance)
 				{
+					//Fieldの範囲内のParticleには加速度を適用する
+					if (FieldAcceleration)
+					{
+						if (IsCollision(accelerationField.area, (*particleIterator).transform.translate))
+						{
+							(*particleIterator).velocity += accelerationField.acceleration * kDeltaTime;
+						}
+					}
+					//速度を適用
 					(*particleIterator).transform.translate = Add((*particleIterator).transform.translate, Multiply(kDeltaTime, (*particleIterator).velocity));
+
 					(*particleIterator).currentTime += kDeltaTime; //経過時間を足す
 					Matrix4x4 worldMatrix = Multiply(billboardMatrix, MakeAffineMatrix((*particleIterator).transform.scale, (*particleIterator).transform.rotate, (*particleIterator).transform.translate));
 					Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
@@ -1629,10 +1638,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					//生きているParticleの数を1つカウントする
 					++numInstance;
 				}
-				/*++particleIterator;*/
-				/*ImGui::Begin("particle");
-				ImGui::DragFloat3("transform", &(*particleIterator).transform.translate.x, 0.01f);
-				ImGui::End();*/
 				//次のイテレータに進める
 				++particleIterator;
 			}
@@ -1685,6 +1690,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
 			//ImGui::Checkbox("useMonsterBall", &useMonsterBall);
+			ImGui::End();
+
+			ImGui::Begin("Field");
+			ImGui::Checkbox("FieldAcceleration", &FieldAcceleration);
+			ImGui::DragFloat3("Acceleration", &accelerationField.acceleration.x, 0.01f);
+			ImGui::DragFloat3("max", &accelerationField.area.max.x, 0.01f);
+			ImGui::DragFloat3("min", &accelerationField.area.min.x, 0.01f);
 			ImGui::End();
 
 			//ImGui::Begin("BlendMode");
