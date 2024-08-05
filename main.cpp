@@ -1432,10 +1432,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::Begin("Window");
 			//ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
 			//ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);
-			ImGui::DragFloat3("CameraTranslate", &cameraTransform.scale.x, 0.01f);
+			ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
-			ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
+			//ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
 			//ImGui::Checkbox("useMonsterBall", &useMonsterBall);
