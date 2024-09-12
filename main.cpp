@@ -105,6 +105,7 @@ struct Material {
 	int32_t enableLighting;
 	float padding[3];
 	Matrix4x4 uvTransform;
+	float shininess;
 };
 
 //TransformationMatrixを拡張する
@@ -188,6 +189,10 @@ BlendMode mode = kBlendModeNormal;
 //乱数生成器の初期化
 std::random_device seedGenerator;
 std::mt19937 randomEngine(seedGenerator());
+
+struct CameraForGPU {
+	Vector3 worldPosition;
+};
 
 
 static const int kWindowWidth = 1280;
@@ -847,10 +852,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = swapChain->GetBuffer(1, IID_PPV_ARGS(&swapChainResources[1]));
 	assert(SUCCEEDED(hr));
 
-
+	int  SphreVertex = 32 * 32 * 6;
 
 	//球
-	//ID3D12Resource* vertexResource = CreateBufferResource(device, sizeof(VertexData) * SphreVertex);
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSphre = CreateBufferResource(device, sizeof(VertexData) * SphreVertex);
 
 	//三角形
 	//ID3D12Resource* vertexResource = CreateBufferResource(device, sizeof(VertexData) * 6);
@@ -919,11 +924,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;  //SRVを使う
 	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;  //Offsetを自動計算
 
-	D3D12_DESCRIPTOR_RANGE descriptorRangeForInstancing[1] = {};
+	/*D3D12_DESCRIPTOR_RANGE descriptorRangeForInstancing[1] = {};
 	descriptorRangeForInstancing[0].BaseShaderRegister = 0;
 	descriptorRangeForInstancing[0].NumDescriptors = 1;
 	descriptorRangeForInstancing[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	descriptorRangeForInstancing[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	descriptorRangeForInstancing[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;*/
 
 
 
@@ -935,19 +940,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	//RootSignature作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
+	D3D12_ROOT_PARAMETER rootParameters[5] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;    //PixelShaderで使う
 	rootParameters[0].Descriptor.ShaderRegister = 0;    //レジスタ番号0とバインド
 
-	//rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
-	//rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;    //VertexShaderで使う
-	//rootParameters[1].Descriptor.ShaderRegister = 0;    //レジスタ番号0を使う
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;    //VertexShaderで使う
+	rootParameters[1].Descriptor.ShaderRegister = 0;    //レジスタ番号0を使う
 
-	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	/*rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 	rootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeForInstancing;
-	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing);
+	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing);*/
 
 	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;  //DescriptorTableを使う
 	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -957,6 +962,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
 	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
 	rootParameters[3].Descriptor.ShaderRegister = 1;  //レジスタ番号1を使う
+
+	////=========光源のカメラの位置をShaderで使う=========////
+	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	rootParameters[4].Descriptor.ShaderRegister = 2;  //レジスタ番号1を使う
 
 	descriptionRootSignature.pParameters = rootParameters;    //ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);    //配列の長さ
@@ -1019,15 +1029,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_BLEND_DESC blendDesc{};
 	//すべての色要素を書き込む
 	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	//blendDesc.RenderTarget[0].BlendEnable = TRUE;
 	//--------ノーマルブレンド--------//
-	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;*/
-	//--------加算合成--------//
 	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	//--------加算合成--------//
+	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;*/
 	//--------減算合成--------//
 	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
@@ -1059,13 +1069,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	////=========ShaderをCompileする=========////
 
 	//Shaderをコンパイルする
-	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"Particle.VS.hlsli",
+
+	//-------基本的-------//
+	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"Object3d.VS.hlsl",
+		L"vs_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(vertexShaderBlob != nullptr);
+
+	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"Object3d.PS.hlsl",
+		L"ps_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(pixelShaderBlob != nullptr);
+
+	//-------パーティクル時-------//
+	/*Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"Particle.VS.hlsli",
 		L"vs_6_0", dxcUtils, dxcCompiler, includeHandler);
 	assert(vertexShaderBlob != nullptr);
 
 	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"Particle.PS.hlsli",
 		L"ps_6_0", dxcUtils, dxcCompiler, includeHandler);
-	assert(pixelShaderBlob != nullptr);
+	assert(pixelShaderBlob != nullptr);*/
 
 
 
@@ -1128,6 +1149,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	materialData->color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
 	materialData->enableLighting = true;
 	materialData->uvTransform = MakeIdentity4x4();
+	materialData->shininess = 50.0f;
 
 
 	//////=========Material用のResourceを作る=========////
@@ -1141,6 +1163,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//単位行列を書き込んでおく
 	wvpData->WVP = MakeIdentity4x4();
 	wvpData->World = MakeIdentity4x4();
+
+	//WVP用のリソースを作る。Matrix4x4 1つ分のサイズを用意する
+	Microsoft::WRL::ComPtr<ID3D12Resource> SphrewvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
+	//データを書き込む
+	TransformationMatrix* SphrewvpData = nullptr;
+	//書き込むためのアドレスを取得
+	SphrewvpResource->Map(0, nullptr, reinterpret_cast<void**>(&SphrewvpData));
+	//単位行列を書き込んでおく
+	SphrewvpData->WVP = MakeIdentity4x4();
+	SphrewvpData->World = MakeIdentity4x4();
 
 
 	//////=========Material用のResourceを作る=========////
@@ -1170,6 +1202,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	directionalLightData->direction = { 0.0f,-1.0f,0.0f };
 	directionalLightData->intensity = 1.0f;
 
+	////=========光源のカメラの位置のResourceを作成=========////
+
+	//平行光源用のリソースを作る
+	Microsoft::WRL::ComPtr<ID3D12Resource> CameraShaderResource = CreateBufferResource(device, sizeof(CameraForGPU));
+	//データを書き込む
+	CameraForGPU* cameraLightData = nullptr;
+	//書き込むためのアドレスを取得
+	CameraShaderResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraLightData));
+	//デフォルト値はとりあえず以下のようにしておく
+	cameraLightData->worldPosition = {};
+
+	
+
 
 	////=========Index用のあれやこれやを作成する=========////
 
@@ -1188,6 +1233,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	////=========Resourceの作成=========////
 
+	//-------パーティクル時のResorce-------//
 	const uint32_t kNumInstance = 10;
 	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource =
 		CreateBufferResource(device, sizeof(TransformationMatrix) * kNumInstance);
@@ -1211,9 +1257,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 
-
-
-
 	//Resourceを作成
 	Microsoft::WRL::ComPtr<ID3D12Resource> startResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 32 * 32 * 6);
 
@@ -1226,7 +1269,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//インデックスはuint32_tとする
 	startBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
 
-	int  SphreVertex = 32 * 32 * 6;
+	//int  SphreVertex = 32 * 32 * 6;
 
 	//////=========WorldViewProjectionMatrixを作る=========////
 
@@ -1262,8 +1305,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 
 
-	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	modelData.material.textureFilePath = "./Resources/circle.png";
+	modelData.material.textureFilePath = "./Resources/uvChecker.png";
+	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
 
@@ -1278,6 +1321,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
 	//1頂点あたりのサイズ
 	vertexBufferView.StrideInBytes = sizeof(VertexData);
+
+	//Sphre
+	D3D12_VERTEX_BUFFER_VIEW SphrevertexBufferView{};
+	//リソースの先頭のアドレスから使う
+	SphrevertexBufferView.BufferLocation = vertexResourceSphre->GetGPUVirtualAddress();
+	//使用するリソースのサイズは頂点のサイズ
+	SphrevertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * SphreVertex);
+	//1頂点あたりのサイズ
+	SphrevertexBufferView.StrideInBytes = sizeof(VertexData);
 
 
 	////=========頂点バッファビューを作成する=========////
@@ -1301,6 +1353,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
 	//頂点データをリソースにコピー
 	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
+
+	//球
+	//頂点リソースにデータを書き込む
+	VertexData* SphrevertexData = nullptr;
+	//書き込むためのアドレスを取得
+	vertexResourceSphre->Map(0, nullptr, reinterpret_cast<void**>(&SphrevertexData));
 
 
 	//////=========IndexResourceにデータを書き込む=========////
@@ -1335,6 +1393,122 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexDataSprite[3].position = { 640.0f,0.0f,0.0f,1.0f };
 	vertexDataSprite[3].texcoord = { 1.0f,0.0f };
 
+
+
+	const float kSubdivision = 32.0f;
+
+	const float pi = M_PI;
+	float LatIndex{};
+	float LonIndex{};
+	////Texcoordの計算
+	//float u = float(LonIndex) / float(kSubdivision);
+	//float v = 1.0f - float(LatIndex) / float(kSubdivision);
+	//経度分割1つ分の角度
+	const float kLonEvery = pi * 2.0f / float(kSubdivision);
+	//緯度分割1つ分の角度
+	const float kLatEvery = pi / float(kSubdivision);
+	//緯度の方向に分割
+	for (LatIndex = 0; LatIndex < kSubdivision; ++LatIndex)
+	{
+		float Lat = -pi / 2.0f + kLatEvery * LatIndex;  //θ
+		//経度の方向に分割しながら線を描く
+		for (LonIndex = 0; LonIndex < kSubdivision; ++LonIndex)
+		{
+			//Texcoordの計算
+			float u = float(LonIndex) / float(kSubdivision);
+			float v = 1.0f - float(LatIndex) / float(kSubdivision);
+
+			uint32_t start = (LatIndex * kSubdivision + LonIndex) * 6;
+			float Lon = LonIndex * kLonEvery;  //φ
+			//頂点にデータを入力する。基準点a
+			SphrevertexData[start].position.x = std::cos(Lat) * std::cos(Lon);
+			SphrevertexData[start].position.y = std::sin(Lat);
+			SphrevertexData[start].position.z = std::cos(Lat) * std::sin(Lon);
+			SphrevertexData[start].position.w = 1.0f;
+			SphrevertexData[start].texcoord = { u,v };
+			//////=========法線情報を追加する=========////
+			SphrevertexData[start].normal.x = SphrevertexData[start].position.x;
+			SphrevertexData[start].normal.y = SphrevertexData[start].position.y;
+			SphrevertexData[start].normal.z = SphrevertexData[start].position.z;
+			//頂点にデータを入力する。基準点b
+			SphrevertexData[start + 1].position.x = std::cos(Lat + kLatEvery) * std::cos(Lon);
+			SphrevertexData[start + 1].position.y = std::sin(Lat + kLatEvery);
+			SphrevertexData[start + 1].position.z = std::cos(Lat + kLatEvery) * std::sin(Lon);
+			SphrevertexData[start + 1].position.w = 1.0f;
+			SphrevertexData[start + 1].texcoord = { u,v - 1.0f / kSubdivision };
+			////=========法線情報を追加する=========////
+			SphrevertexData[start + 1].normal.x = SphrevertexData[start + 1].position.x;
+			SphrevertexData[start + 1].normal.y = SphrevertexData[start + 1].position.y;
+			SphrevertexData[start + 1].normal.z = SphrevertexData[start + 1].position.z;
+			//頂点にデータを入力する。基準点c
+			SphrevertexData[start + 2].position.x = std::cos(Lat) * std::cos(Lon + kLonEvery);
+			SphrevertexData[start + 2].position.y = std::sin(Lat);
+			SphrevertexData[start + 2].position.z = std::cos(Lat) * std::sin(Lon + kLonEvery);
+			SphrevertexData[start + 2].position.w = 1.0f;
+			SphrevertexData[start + 2].texcoord = { u + 1.0f / kSubdivision,v };
+			////=========法線情報を追加する=========////
+			SphrevertexData[start + 2].normal.x = SphrevertexData[start + 2].position.x;
+			SphrevertexData[start + 2].normal.y = SphrevertexData[start + 2].position.y;
+			SphrevertexData[start + 2].normal.z = SphrevertexData[start + 2].position.z;
+			//頂点にデータを入力する。基準点d
+			SphrevertexData[start + 3].position.x = std::cos(Lat + kLatEvery) * std::cos(Lon + kLonEvery);
+			SphrevertexData[start + 3].position.y = std::sin(Lat + kLatEvery);
+			SphrevertexData[start + 3].position.z = std::cos(Lat + kLatEvery) * sin(Lon + kLonEvery);
+			SphrevertexData[start + 3].position.w = 1.0f;
+			SphrevertexData[start + 3].texcoord = { u + 1.0f / kSubdivision,v - 1.0f / kSubdivision };
+			////=========法線情報を追加する=========////
+			SphrevertexData[start + 3].normal.x = SphrevertexData[start + 3].position.x;
+			SphrevertexData[start + 3].normal.y = SphrevertexData[start + 3].position.y;
+			SphrevertexData[start + 3].normal.z = SphrevertexData[start + 3].position.z;
+			//頂点にデータを入力する。基準点c
+			SphrevertexData[start + 4].position.x = /*std::cos(Lat + kLatEvery) * std::cos(Lon);*/std::cos(Lat) * std::cos(Lon + kLonEvery);
+			SphrevertexData[start + 4].position.y = /*std::sin(Lat + kLatEvery);*/std::sin(Lat);
+			SphrevertexData[start + 4].position.z = /*std::cos(Lat + kLatEvery) * std::sin(Lon);*/std::cos(Lat) * std::sin(Lon + kLonEvery);
+			SphrevertexData[start + 4].position.w = 1.0f;
+			SphrevertexData[start + 4].texcoord = { u + 1.0f / kSubdivision,v };
+			////=========法線情報を追加する=========////
+			SphrevertexData[start + 4].normal.x = SphrevertexData[start + 4].position.x;
+			SphrevertexData[start + 4].normal.y = SphrevertexData[start + 4].position.y;
+			SphrevertexData[start + 4].normal.z = SphrevertexData[start + 4].position.z;
+			//頂点にデータを入力する。基準点b
+			SphrevertexData[start + 5].position.x = /*std::cos(Lat) * std::cos(Lon + kLonEvery);*/std::cos(Lat + kLatEvery) * std::cos(Lon);
+			SphrevertexData[start + 5].position.y = /*std::sin(Lat);*/std::sin(Lat + kLatEvery);
+			SphrevertexData[start + 5].position.z = /*std::cos(Lat) * std::sin(Lon + kLonEvery);*/std::cos(Lat + kLatEvery) * std::sin(Lon);
+			SphrevertexData[start + 5].position.w = 1.0f;
+			SphrevertexData[start + 5].texcoord = { u,v - 1.0f / kSubdivision };
+			////=========法線情報を追加する=========////
+			SphrevertexData[start + 5].normal.x = SphrevertexData[start + 5].position.x;
+			SphrevertexData[start + 5].normal.y = SphrevertexData[start + 5].position.y;
+			SphrevertexData[start + 5].normal.z = SphrevertexData[start + 5].position.z;
+
+
+			////////=========法線情報を追加する=========////
+
+			//vertexData[start].normal.x = vertexData[start].position.x;
+			//vertexData[start].normal.y = vertexData[start].position.y;
+			//vertexData[start].normal.z = vertexData[start].position.z;
+
+			/*vertexData[start+1].normal.x = vertexData[start+1].position.x;
+			vertexData[start+1].normal.y = vertexData[start+1].position.y;
+			vertexData[start+1].normal.z = vertexData[start+1].position.z;*/
+
+			/*vertexData[start+2].normal.x = vertexData[start+2].position.x;
+			vertexData[start+2].normal.y = vertexData[start+2].position.y;
+			vertexData[start+2].normal.z = vertexData[start+2].position.z;*/
+
+			/*vertexData[start+3].normal.x = vertexData[start+3].position.x;
+			vertexData[start+3].normal.y = vertexData[start+3].position.y;
+			vertexData[start+3].normal.z = vertexData[start+3].position.z;*/
+
+			/*vertexData[start+4].normal.x = vertexData[start+4].position.x;
+			vertexData[start+4].normal.y = vertexData[start+4].position.y;
+			vertexData[start+4].normal.z = vertexData[start+4].position.z;*/
+
+			/*vertexData[start+5].normal.x = vertexData[start+5].position.x;
+			vertexData[start+5].normal.y = vertexData[start+5].position.y;
+			vertexData[start+5].normal.z = vertexData[start+5].position.z;*/
+		}
+	}
 
 
 
@@ -1380,6 +1554,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Transform変数を作る
 	//Transform transform{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
 
+	//-------パーティクル時-------//
+
 	//エミッタ-
 	Emitter emitter{};
 	emitter.count = 3;
@@ -1413,13 +1589,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	accelerationField.area.max = { 1.0f,1.0f,1.0f };
 	accelerationField.area.min = { -1.0f,-1.0f,-1.0f };
 
-
-
-
-	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
-
 	//常にカメラ目線
-	Transform cameraTransform{ {1.0f,1.0f,1.0f},{std::numbers::pi_v<float> / 3.0f,std::numbers::pi_v<float>,0.0f},{0.0f,23.0f,10.0f} };
+	//Transform cameraTransform{ {1.0f,1.0f,1.0f},{std::numbers::pi_v<float> / 3.0f,std::numbers::pi_v<float>,0.0f},{0.0f,23.0f,10.0f} };
+
+
+	//-------基本的-------//
+
+	//Transform変数を作る
+	Transform transform{ {1.0f,1.0f,1.0f},{0.0f,3.0f,0.0f},{2.25f,0.0f,0.0f} };
+
+	Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
+
+	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
 
 
 	//CPUで動かす用のTransformを作る
@@ -1465,8 +1646,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	UploadTextureData(textureResource.Get(), mipImages);
 
 	// Textureを読んで転送する2
-	//DirectX::ScratchImage mipImages2 = LoadTexture("./Resources/monsterBall.png");
-	DirectX::ScratchImage mipImages2 = LoadTexture(modelData.material.textureFilePath);
+	DirectX::ScratchImage mipImages2 = LoadTexture("./Resources/monsterBall.png");
+	//DirectX::ScratchImage mipImages2 = LoadTexture(modelData.material.textureFilePath);
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
 	UploadTextureData(textureResource2.Get(), mipImages2);
@@ -1526,14 +1707,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 	//device->CreateShaderResourceView(instancingResource.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
-	device->CreateShaderResourceView(instancingResource2.Get(), &instancingSrvDesc2, instancingSrvHandleCPU);
+	//------パーティクル時-------//
+	//device->CreateShaderResourceView(instancingResource2.Get(), &instancingSrvDesc2, instancingSrvHandleCPU);
 
 
 	bool useMonsterBall = true;
-	Vector4 color = { 1,1,1,1 };
-	bool usebillboardMatrix = true;
+	//Vector4 color = { 1,1,1,1 };
+	/*bool usebillboardMatrix = true;
 	bool isParticleAlive = false;
-	bool FieldAcceleration = false;
+	bool FieldAcceleration = false;*/
 
 	///
 
@@ -1558,102 +1740,142 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//ゲームの処理
 
+#pragma region Particle
+
+			//Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+
+			//Matrix4x4 viewMatrix = Inverse(cameraMatrix);
+			//Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+			//Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+
+			////=====常にカメラ目線======//
+			////表面がカメラの方を向くようにする
+			//Matrix4x4 backToFrontMatrix = MakeRotateYMatrix(std::numbers::pi_v<float>);
+			////カメラの回転を適用する
+			//Matrix4x4 billboardMatrix{};
+			//if (usebillboardMatrix)
+			//{
+			//	billboardMatrix = Multiply(backToFrontMatrix, cameraMatrix);
+			//	billboardMatrix.m[3][0] = 0.0f;  //平行移動成分はいらない
+			//	billboardMatrix.m[3][1] = 0.0f;
+			//	billboardMatrix.m[3][2] = 0.0f;
+			//}
+			//else if (usebillboardMatrix == false)
+			//{
+			//	billboardMatrix = MakeIdentity4x4();
+			//}
+
+
+			////-----------------------------------描画順について-----------------------------------//
+			////ParticleはDepthを書かないため、先に描画すると、3Dオブジェクトにすべて上書きされてしまう
+			////基本後ろ側のものが先に書かれていた方が良い
+			////これらを加味すると現状は...
+			////1,3Dオブジェクト   2,Particleの順で描画すると良い
+
+
+			//////==========エミッター更新==========////
+
+			//emitter.frequencyTime += kDeltaTime;  // 時刻を進める
+			//if (emitter.frequency <= emitter.frequencyTime)
+			//{
+			//	//頻度より大きいなら発生
+			//	particles.splice(particles.end(), Emit(emitter, randomEngine));  //発生処理
+			//	emitter.frequencyTime -= emitter.frequency;  //余計に過ぎた時間も加味して頻度計算する
+			//}
+
+
+			//////==========パーティクル更新==========////
+
+			//uint32_t numInstance = 0;  //描画すべきインスタンス数
+			//for (std::list<Particle>::iterator particleIterator = particles.begin(); particleIterator != particles.end();)
+			//{
+			//	if ((*particleIterator).lifeTime <= (*particleIterator).currentTime)
+			//	{
+			//		//生存期間が過ぎたParticleはlistから消す。戻り値が次のイテレータとなる
+			//		particleIterator = particles.erase(particleIterator);
+			//		//生存期間を過ぎていたら更新せず描画対象にしない
+			//		continue;
+			//	}
+			//	if (numInstance < kNumMaxInstance)
+			//	{
+			//		//Fieldの範囲内のParticleには加速度を適用する
+			//		if (FieldAcceleration)
+			//		{
+			//			if (IsCollision(accelerationField.area, (*particleIterator).transform.translate))
+			//			{
+			//				(*particleIterator).velocity += accelerationField.acceleration * kDeltaTime;
+			//			}
+			//		}
+			//		//速度を適用
+			//		(*particleIterator).transform.translate = Add((*particleIterator).transform.translate, Multiply(kDeltaTime, (*particleIterator).velocity));
+
+			//		(*particleIterator).currentTime += kDeltaTime; //経過時間を足す
+			//		Matrix4x4 worldMatrix = Multiply(billboardMatrix, MakeAffineMatrix((*particleIterator).transform.scale, (*particleIterator).transform.rotate, (*particleIterator).transform.translate));
+			//		Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
+			//		instancingData2[numInstance].WVP = worldviewProjectionMatrix;
+			//		instancingData2[numInstance].World = worldMatrix;
+			//		//徐々に消す
+			//		float alpha = 1.0f - ((*particleIterator).currentTime / (*particleIterator).lifeTime);
+			//		instancingData2[numInstance].color = (*particleIterator).color;
+			//		instancingData2[numInstance].color.w = alpha;
+			//		//生きているParticleの数を1つカウントする
+			//		++numInstance;
+			//	}
+			//	//次のイテレータに進める
+			//	++particleIterator;
+			//}
+			////*wvpData = worldMatrix;
+			////wvpData->WVP = worldMatrix;
+			////wvpData->World = worldMatrix;
+			////WVPMatrixを作る
+
+			////*WorldViewProjectionMatrixData = worldviewProjectionMatrix;
+			////wvpData->WVP = worldviewProjectionMatrix;
+
+			//Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
+			//uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
+			//uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
+
+			//materialDataSprite->uvTransform = uvTransformMatrix;
+
+
+
+
+#pragma endregion Particle
+
+
+
+
+
+
+
+
 			//transform.rotate.y += 0.02f;
-			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-
-			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
-			Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-
-			//=====常にカメラ目線======//
-			//表面がカメラの方を向くようにする
-			Matrix4x4 backToFrontMatrix = MakeRotateYMatrix(std::numbers::pi_v<float>);
-			//カメラの回転を適用する
-			Matrix4x4 billboardMatrix{};
-			if (usebillboardMatrix)
-			{
-				billboardMatrix = Multiply(backToFrontMatrix, cameraMatrix);
-				billboardMatrix.m[3][0] = 0.0f;  //平行移動成分はいらない
-				billboardMatrix.m[3][1] = 0.0f;
-				billboardMatrix.m[3][2] = 0.0f;
-			}
-			else if (usebillboardMatrix == false)
-			{
-				billboardMatrix = MakeIdentity4x4();
-			}
 
 
-			//-----------------------------------描画順について-----------------------------------//
-			//ParticleはDepthを書かないため、先に描画すると、3Dオブジェクトにすべて上書きされてしまう
-			//基本後ろ側のものが先に書かれていた方が良い
-			//これらを加味すると現状は...
-			//1,3Dオブジェクト   2,Particleの順で描画すると良い
-
-
-			////==========エミッター更新==========////
-
-			emitter.frequencyTime += kDeltaTime;  // 時刻を進める
-			if (emitter.frequency <= emitter.frequencyTime)
-			{
-				//頻度より大きいなら発生
-				particles.splice(particles.end(), Emit(emitter, randomEngine));  //発生処理
-				emitter.frequencyTime -= emitter.frequency;  //余計に過ぎた時間も加味して頻度計算する
-			}
-
-
-			////==========パーティクル更新==========////
-
-			uint32_t numInstance = 0;  //描画すべきインスタンス数
-			for (std::list<Particle>::iterator particleIterator = particles.begin(); particleIterator != particles.end();)
-			{
-				if ((*particleIterator).lifeTime <= (*particleIterator).currentTime)
-				{
-					//生存期間が過ぎたParticleはlistから消す。戻り値が次のイテレータとなる
-					particleIterator = particles.erase(particleIterator);
-					//生存期間を過ぎていたら更新せず描画対象にしない
-					continue;
-				}
-				if (numInstance < kNumMaxInstance)
-				{
-					//Fieldの範囲内のParticleには加速度を適用する
-					if (FieldAcceleration)
-					{
-						if (IsCollision(accelerationField.area, (*particleIterator).transform.translate))
-						{
-							(*particleIterator).velocity += accelerationField.acceleration * kDeltaTime;
-						}
-					}
-					//速度を適用
-					(*particleIterator).transform.translate = Add((*particleIterator).transform.translate, Multiply(kDeltaTime, (*particleIterator).velocity));
-
-					(*particleIterator).currentTime += kDeltaTime; //経過時間を足す
-					Matrix4x4 worldMatrix = Multiply(billboardMatrix, MakeAffineMatrix((*particleIterator).transform.scale, (*particleIterator).transform.rotate, (*particleIterator).transform.translate));
-					Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, viewProjectionMatrix);
-					instancingData2[numInstance].WVP = worldviewProjectionMatrix;
-					instancingData2[numInstance].World = worldMatrix;
-					//徐々に消す
-					float alpha = 1.0f - ((*particleIterator).currentTime / (*particleIterator).lifeTime);
-					instancingData2[numInstance].color = (*particleIterator).color;
-					instancingData2[numInstance].color.w = alpha;
-					//生きているParticleの数を1つカウントする
-					++numInstance;
-				}
-				//次のイテレータに進める
-				++particleIterator;
-			}
+			Matrix4x4 SphreworldMatrix = MakeAffineMatrix(sphretransform.scale, sphretransform.rotate, sphretransform.translate);
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
-			//wvpData->World = worldMatrix;
-			//WVPMatrixを作る
+			SphrewvpData->World = SphreworldMatrix;
 
-			//*WorldViewProjectionMatrixData = worldviewProjectionMatrix;
-			//wvpData->WVP = worldviewProjectionMatrix;
+			Matrix4x4  SphrecameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+			Matrix4x4  SphreviewMatrix = Inverse(SphrecameraMatrix);
+			Matrix4x4  SphreprojectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+			//WVPMatrixを作る
+			Matrix4x4 SphreworldviewProjectionMatrix = Multiply(SphreworldMatrix, Multiply(SphreviewMatrix, SphreprojectionMatrix));
+
+			*WorldViewProjectionMatrixData = SphreworldviewProjectionMatrix;
+			SphrewvpData->WVP = SphreworldviewProjectionMatrix;
+
+
+
 
 			Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
 			uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
 			uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
 
 			materialDataSprite->uvTransform = uvTransformMatrix;
+
 
 			//Sprite用のWorldViewProjectionMatrixを作る
 			Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
@@ -1663,7 +1885,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
 
-
+			//ライトの位置にカメラの位置をを入れる
+			cameraLightData->worldPosition = cameraTransform.translate;
 
 			//////=========Imguiを使う=========////
 
@@ -1673,31 +1896,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::Begin("Window");
 			//ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
 			//ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);
-			ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
+			ImGui::DragFloat3("ModelTranslate", &sphretransform.translate.x, 0.01f);
+			ImGui::DragFloat3("ModelRotate", &sphretransform.rotate.x, 0.01f);
+			ImGui::DragFloat3("ModelScale", &sphretransform.scale.x, 0.01f);
+			//ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
-			ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
-			if (ImGui::Button("Add Particle"))
-			{
-				particles.splice(particles.end(), Emit(emitter, randomEngine));
-				/*particles.push_back(MakeNewParticle(randomEngine));
-				particles.push_back(MakeNewParticle(randomEngine));
-				particles.push_back(MakeNewParticle(randomEngine));*/
-			}
-			ImGui::DragFloat3("EmitterTranslate", &emitter.transform.translate.x, 0.01f, -100.0f, 100.0f);
+			//ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
+			ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
+			directionalLightData->direction = Normalize(directionalLightData->direction);
+			//ImGui::DragFloat3("cameraLight", &cameraLightData->worldPosition.x, 0.01f);
+			//cameraLightData->worldPosition = Normalize(cameraLightData->worldPosition);
+
+
+			//if (ImGui::Button("Add Particle"))
+			//{
+			//	particles.splice(particles.end(), Emit(emitter, randomEngine));
+			//	/*particles.push_back(MakeNewParticle(randomEngine));
+			//	particles.push_back(MakeNewParticle(randomEngine));
+			//	particles.push_back(MakeNewParticle(randomEngine));*/
+			//}
+			//ImGui::DragFloat3("EmitterTranslate", &emitter.transform.translate.x, 0.01f, -100.0f, 100.0f);
 			//ImGui::Checkbox("isParticleAlive", &isParticleAlive);
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
-			//ImGui::Checkbox("useMonsterBall", &useMonsterBall);
+			ImGui::Checkbox("useMonsterBall", &useMonsterBall);
 			ImGui::End();
 
-			ImGui::Begin("Field");
+			/*ImGui::Begin("Field");
 			ImGui::Checkbox("FieldAcceleration", &FieldAcceleration);
 			ImGui::DragFloat3("Acceleration", &accelerationField.acceleration.x, 0.01f);
 			ImGui::DragFloat3("max", &accelerationField.area.max.x, 0.01f);
 			ImGui::DragFloat3("min", &accelerationField.area.min.x, 0.01f);
-			ImGui::End();
+			ImGui::End();*/
 
 			//ImGui::Begin("BlendMode");
 			////const char* items[] = { "kBlendModeNone", "kBlendModeNormal", "kBlendModeAdd", "kBlendModeSubtract", "kBlendModeMultiply", "kBlendModeScreen", "kCountOfBlendMode" };
@@ -1787,8 +2019,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//マテリアルCBufferの場所を設定
 			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
 			//wvp用のCBufferの場所を設定
-			//commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(1, instancingSrvHandleGPU);
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
+			//commandList->SetGraphicsRootDescriptorTable(1, instancingSrvHandleGPU);
+			//
 
 
 			////=========DescriptorTableを設定する=========////
@@ -1798,13 +2031,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			commandList->SetGraphicsRootConstantBufferView(3, shaderResource->GetGPUVirtualAddress());
 
+			commandList->SetGraphicsRootConstantBufferView(4, CameraShaderResource->GetGPUVirtualAddress());
+
 
 			//モデル
 			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
 
+			//球
+			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
+			commandList->SetGraphicsRootConstantBufferView(1, SphrewvpResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);
+
+
+			//-------パーティクル時-------//
 			//commandList->DrawInstanced(6, kNumInstance, 0, 0);
 			//消えるようにするため↓に変更
-			commandList->DrawInstanced(6, numInstance, 0, 0);
+			//commandList->DrawInstanced(6, numInstance, 0, 0);
 
 
 			//////=========Spriteの描画コマンドを積む=========////
