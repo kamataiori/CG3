@@ -112,6 +112,7 @@ struct Material {
 struct TransformationMatrix {
 	Matrix4x4 WVP;
 	Matrix4x4 World;
+	Matrix4x4 WorldInverseTranspose;
 };
 
 //平行光源
@@ -1163,6 +1164,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//単位行列を書き込んでおく
 	wvpData->WVP = MakeIdentity4x4();
 	wvpData->World = MakeIdentity4x4();
+	wvpData->WorldInverseTranspose = MakeIdentity4x4();
 
 	//WVP用のリソースを作る。Matrix4x4 1つ分のサイズを用意する
 	Microsoft::WRL::ComPtr<ID3D12Resource> SphrewvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
@@ -1173,6 +1175,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//単位行列を書き込んでおく
 	SphrewvpData->WVP = MakeIdentity4x4();
 	SphrewvpData->World = MakeIdentity4x4();
+	SphrewvpData->WorldInverseTranspose = MakeIdentity4x4();
+	//SphrewvpData->WorldInverseTranspose = MakeAffineMatrix();
 
 
 	//////=========Material用のResourceを作る=========////
@@ -1243,6 +1247,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	{
 		instancingData[index].WVP = MakeIdentity4x4();
 		instancingData[index].World = MakeIdentity4x4();
+		instancingData[index].WorldInverseTranspose = MakeIdentity4x4();
 	}
 
 	const uint32_t kNumMaxInstance = 100;
@@ -1547,6 +1552,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	transformationMatrixResorceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
 	//単位行列を書き込んでおく
 	transformationMatrixDataSprite->World = MakeIdentity4x4();
+	//transformationMatrixDataSprite->WorldInverseTranspose = MakeIdentity4x4();
 
 
 	//////=========Transformを使ってCBufferを更新する=========////

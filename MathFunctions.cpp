@@ -208,6 +208,16 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rot, const Vecto
 	return result;
 }
 
+Matrix4x4 MakeAffineMatrix()
+{
+	// デフォルト値を設定（拡大: 1.0、回転: 0、平行移動: 0）
+	Vector3 scale = { 1.0f, 1.0f, 1.0f };
+	Vector3 rot = { 0.0f, 0.0f, 0.0f };
+	Vector3 translate = { 0.0f, 0.0f, 0.0f };
+
+	return MakeAffineMatrix(scale, rot, translate);
+}
+
 //逆行列
 Matrix4x4 Inverse(const Matrix4x4& matrix)
 {
