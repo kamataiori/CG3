@@ -1873,6 +1873,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			*WorldViewProjectionMatrixData = SphreworldviewProjectionMatrix;
 			SphrewvpData->WVP = SphreworldviewProjectionMatrix;
 
+			Matrix4x4 SphereTranspose = transpose(Inverse(SphreworldMatrix));
+			SphrewvpData->WorldInverseTranspose = SphereTranspose;
 
 
 

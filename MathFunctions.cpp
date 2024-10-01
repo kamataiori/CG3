@@ -330,3 +330,14 @@ Vector3 Add(const Vector3& v1, const Vector3& v2)
 
 	return result;
 }
+
+Matrix4x4 transpose(const Matrix4x4& matrix)
+{
+	Matrix4x4 result = {};
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			result.m[i][j] = matrix.m[j][i];
+		}
+	}
+	return result;
+}

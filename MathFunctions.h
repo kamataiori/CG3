@@ -49,3 +49,5 @@ Vector3 Normalize(const Vector3& v);
 Vector3 Multiply(float scalar, Vector3& vec);
 
 Vector3 Add(const Vector3& v1, const Vector3& v2);
+
+Matrix4x4 transpose(const Matrix4x4& matrix);
