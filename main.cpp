@@ -122,6 +122,13 @@ struct DirectionalLight {
 	float intensity;  //!<輝度
 };
 
+//ポイントライト
+struct PointLight {
+	Vector4 color;   //!<ライトの色
+	Vector3 position;  //!ライトの位置
+	float intensity;  //!<輝度
+};
+
 //MaterialData構造体
 struct MaterialData {
 	std::string textureFilePath;
@@ -523,7 +530,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 		{
 			Vector2 texcord;
 			s >> texcord.x >> texcord.y;
-			//texcord.y = 1.0f - texcord.y;
+			texcord.y = 1.0f - texcord.y;
 			texcord.x = 1.0f - texcord.x;
 			texcords.push_back(texcord);
 		}
@@ -941,7 +948,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	//RootSignature作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-	D3D12_ROOT_PARAMETER rootParameters[5] = {};
+	D3D12_ROOT_PARAMETER rootParameters[6] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;    //PixelShaderで使う
 	rootParameters[0].Descriptor.ShaderRegister = 0;    //レジスタ番号0とバインド
@@ -967,7 +974,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	////=========光源のカメラの位置をShaderで使う=========////
 	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
 	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
-	rootParameters[4].Descriptor.ShaderRegister = 2;  //レジスタ番号1を使う
+	rootParameters[4].Descriptor.ShaderRegister = 2;  //レジスタ番号2を使う
+
+	////========ポイントライトをShaderで使う========////
+	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	rootParameters[5].Descriptor.ShaderRegister = 3;  //レジスタ番号3を使う
 
 	descriptionRootSignature.pParameters = rootParameters;    //ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);    //配列の長さ
@@ -1217,7 +1229,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//デフォルト値はとりあえず以下のようにしておく
 	cameraLightData->worldPosition = {};
 
-	
+	////=========ポイントライト用のResourceを作成=========////
+
+	//平行光源用のリソースを作る
+	Microsoft::WRL::ComPtr<ID3D12Resource> pointLightResource = CreateBufferResource(device, sizeof(PointLight));
+	//データを書き込む
+	PointLight* pointLightData = nullptr;
+	//書き込むためのアドレスを取得
+	pointLightResource->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData));
+	//デフォルト値はとりあえず以下のようにしておく
+	pointLightData->color = { 1.0f,1.0f,1.0f,1.0f };
+	pointLightData->position = { 0.0f,2.0f,0.0f };
+	pointLightData->intensity = 1.0f;
+
 
 
 	////=========Index用のあれやこれやを作成する=========////
@@ -1298,19 +1322,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//ModelData modelData = LoadObjFile("Resources", "axis.obj");
 	//ModelData modelData = LoadObjFile("Resources", "fence.obj");
 
-	ModelData modelData;
+	//ModelData modelData;
 
 	// モデルの読み込み
-	//ModelData modelData/* = LoadObjFile("resource", "plane.obj")*/;
-	modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	ModelData modelData = LoadObjFile("Resources", "terrain.obj");
+	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
 
 
-	modelData.material.textureFilePath = "./Resources/uvChecker.png";
+	modelData.material.textureFilePath = "./Resources/grass.png";
 	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
@@ -1646,7 +1670,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//////=========組み合わせて使う=========////
 
 	//Textureを読んで転送する
-	DirectX::ScratchImage mipImages = LoadTexture("./Resources/uvChecker.png");
+	//DirectX::ScratchImage mipImages = LoadTexture("./Resources/uvChecker.png");
+	DirectX::ScratchImage mipImages = LoadTexture(modelData.material.textureFilePath);
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
 	UploadTextureData(textureResource.Get(), mipImages);
@@ -1902,8 +1927,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//ImGui::ShowDemoWindow();
 
 			ImGui::Begin("Window");
-			//ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
-			//ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);
+			/*ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
+			ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);*/
 			ImGui::DragFloat3("ModelTranslate", &sphretransform.translate.x, 0.01f);
 			ImGui::DragFloat3("ModelRotate", &sphretransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("ModelScale", &sphretransform.scale.x, 0.01f);
@@ -1911,10 +1936,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
 			//ImGui::Checkbox("usebillboardMatrix", &usebillboardMatrix);
-			ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
+			ImGui::DragFloat3("directionalLight.direction", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);
-			//ImGui::DragFloat3("cameraLight", &cameraLightData->worldPosition.x, 0.01f);
-			//cameraLightData->worldPosition = Normalize(cameraLightData->worldPosition);
+			ImGui::DragFloat("directionalLight.intensity", &directionalLightData->intensity, 0.01f);
+			ImGui::DragFloat3("pointLight.position", &pointLightData->position.x, 0.01f);
+			pointLightData->position = Normalize(pointLightData->position);
+			ImGui::DragFloat("pointLight.intensity", &pointLightData->intensity, 0.01f);
 
 
 			//if (ImGui::Button("Add Particle"))
@@ -2041,9 +2068,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			commandList->SetGraphicsRootConstantBufferView(4, CameraShaderResource->GetGPUVirtualAddress());
 
+			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress());
+
 
 			//モデル
-			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
+			commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
 
 			//球
 			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
