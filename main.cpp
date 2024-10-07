@@ -1626,11 +1626,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//-------基本的-------//
 
 	//Transform変数を作る
-	Transform transform{ {1.0f,1.0f,1.0f},{0.0f,3.0f,0.0f},{2.25f,0.0f,0.0f} };
+	Transform transform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
 
-	Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
+	//Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
 
-	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,10.0f} };
+	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,16.0f} };
 
 
 	//CPUで動かす用のTransformを作る
@@ -1884,21 +1884,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//transform.rotate.y += 0.02f;
 
 
-			Matrix4x4 SphreworldMatrix = MakeAffineMatrix(sphretransform.scale, sphretransform.rotate, sphretransform.translate);
+			Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
-			SphrewvpData->World = SphreworldMatrix;
+			SphrewvpData->World = worldMatrix;
 
-			Matrix4x4  SphrecameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-			Matrix4x4  SphreviewMatrix = Inverse(SphrecameraMatrix);
-			Matrix4x4  SphreprojectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+			Matrix4x4  cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+			Matrix4x4  viewMatrix = Inverse(cameraMatrix);
+			Matrix4x4  projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 			//WVPMatrixを作る
-			Matrix4x4 SphreworldviewProjectionMatrix = Multiply(SphreworldMatrix, Multiply(SphreviewMatrix, SphreprojectionMatrix));
+			Matrix4x4 worldviewProjectionMatrix = Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix));
 
-			*WorldViewProjectionMatrixData = SphreworldviewProjectionMatrix;
-			SphrewvpData->WVP = SphreworldviewProjectionMatrix;
+			*WorldViewProjectionMatrixData = worldviewProjectionMatrix;
+			SphrewvpData->WVP = worldviewProjectionMatrix;
 
-			Matrix4x4 SphereTranspose = transpose(Inverse(SphreworldMatrix));
+			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
 			SphrewvpData->WorldInverseTranspose = SphereTranspose;
 
 
@@ -1929,9 +1929,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::Begin("Window");
 			/*ImGui::DragFloat3("translate", &transform.scale.x, 0.01f);
 			ImGui::DragFloat3("rotate", &transform.rotate.x, 0.01f);*/
-			ImGui::DragFloat3("ModelTranslate", &sphretransform.translate.x, 0.01f);
-			ImGui::DragFloat3("ModelRotate", &sphretransform.rotate.x, 0.01f);
-			ImGui::DragFloat3("ModelScale", &sphretransform.scale.x, 0.01f);
+			ImGui::DragFloat3("ModelTranslate", &transform.translate.x, 0.01f);
+			ImGui::DragFloat3("ModelRotate", &transform.rotate.x, 0.01f);
+			ImGui::DragFloat3("ModelScale", &transform.scale.x, 0.01f);
 			//ImGui::DragFloat3("CameraScale", &cameraTransform.scale.x, 0.01f);
 			ImGui::DragFloat3("CameraRotate", &cameraTransform.rotate.x, 0.01f);
 			ImGui::DragFloat3("CameraTransform", &cameraTransform.translate.x, 0.01f);
