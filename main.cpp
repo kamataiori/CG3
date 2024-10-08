@@ -127,6 +127,8 @@ struct PointLight {
 	Vector4 color;   //!<ライトの色
 	Vector3 position;  //!ライトの位置
 	float intensity;  //!<輝度
+	float radius;  //! ライトの届く最大距離 
+	float decay;  //!減衰率
 };
 
 //MaterialData構造体
@@ -523,7 +525,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 			s >> position.x >> position.y >> position.z;
 			position.w = 1.0f;
 			position.x *= -1.0f;
-			position.y *= -1.0f;
+			//position.y *= -1.0f;
 			positions.push_back(position);
 		}
 		else if (identifier == "vt")
@@ -1218,6 +1220,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	directionalLightData->direction = { 0.0f,-1.0f,0.0f };
 	directionalLightData->intensity = 1.0f;
 
+
 	////=========光源のカメラの位置のResourceを作成=========////
 
 	//平行光源用のリソースを作る
@@ -1241,7 +1244,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	pointLightData->color = { 1.0f,1.0f,1.0f,1.0f };
 	pointLightData->position = { 0.0f,2.0f,0.0f };
 	pointLightData->intensity = 1.0f;
-
+	pointLightData->radius = 20.0f;
+	pointLightData->decay = 10.0f;
 
 
 	////=========Index用のあれやこれやを作成する=========////
@@ -1630,7 +1634,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
 
-	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/1.0f,16.0f} };
+	Transform cameraTransform{ {1.0f,1.0f,1.0f},{0.0f,3.14f,0.0f},{0.0f,/*4.0f*/3.37f,20.0f} };
 
 
 	//CPUで動かす用のTransformを作る
@@ -1888,6 +1892,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
 			SphrewvpData->World = worldMatrix;
+			wvpData->World = worldMatrix;
 
 			Matrix4x4  cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4  viewMatrix = Inverse(cameraMatrix);
@@ -1897,6 +1902,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			*WorldViewProjectionMatrixData = worldviewProjectionMatrix;
 			SphrewvpData->WVP = worldviewProjectionMatrix;
+			wvpData->WVP = worldviewProjectionMatrix;
 
 			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
 			SphrewvpData->WorldInverseTranspose = SphereTranspose;
@@ -1920,6 +1926,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//ライトの位置にカメラの位置をを入れる
 			cameraLightData->worldPosition = cameraTransform.translate;
+			//pointLightData->position = cameraTransform.translate;
 
 			//////=========Imguiを使う=========////
 
@@ -1940,9 +1947,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			directionalLightData->direction = Normalize(directionalLightData->direction);
 			ImGui::DragFloat("directionalLight.intensity", &directionalLightData->intensity, 0.01f);
 			ImGui::DragFloat3("pointLight.position", &pointLightData->position.x, 0.01f);
-			pointLightData->position = Normalize(pointLightData->position);
+			//pointLightData->position = Normalize(pointLightData->position);
 			ImGui::DragFloat("pointLight.intensity", &pointLightData->intensity, 0.01f);
-
+			ImGui::DragFloat("pointLight.radius", &pointLightData->radius, 0.01f);
+			ImGui::DragFloat("pointLight.decay", &pointLightData->decay, 0.01f);
 
 			//if (ImGui::Button("Add Particle"))
 			//{
@@ -2061,7 +2069,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			////=========DescriptorTableを設定する=========////
 
-			commandList->SetGraphicsRootDescriptorTable(2, useMonsterBall ? textureSrvHandleGPU2 : textureSrvHandleGPU);
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 
 
 			commandList->SetGraphicsRootConstantBufferView(3, shaderResource->GetGPUVirtualAddress());
@@ -2076,6 +2084,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//球
 			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU2);
 			commandList->SetGraphicsRootConstantBufferView(1, SphrewvpResource->GetGPUVirtualAddress());
 			commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);
 
