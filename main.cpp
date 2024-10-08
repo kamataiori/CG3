@@ -510,7 +510,7 @@ MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const st
 }
 
 
-////////=========Objファイルを読む関数=========////
+////=========Objファイルを読む関数=========////
 
 ModelData LoadModelFile(const std::string& directoryPath, const std::string& filename)
 {
