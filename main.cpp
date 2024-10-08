@@ -131,6 +131,18 @@ struct PointLight {
 	float decay;  //!減衰率
 };
 
+//スポットライト
+struct SpotLight {
+	Vector4 color;  //!<ライトの色
+	Vector3 position;  //!<ライトの位置
+	float intensity;  //!<輝度
+	Vector3 direction;  //!<スポットライトの方向
+	float distance;  //!<ライトの届く最大距離
+	float decay;  //!減衰率
+	float cosAngle;  //!<スポットライトの余弦
+	float padding[2];
+};
+
 //MaterialData構造体
 struct MaterialData {
 	std::string textureFilePath;
@@ -950,7 +962,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	//RootSignature作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-	D3D12_ROOT_PARAMETER rootParameters[6] = {};
+	D3D12_ROOT_PARAMETER rootParameters[7] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;    //PixelShaderで使う
 	rootParameters[0].Descriptor.ShaderRegister = 0;    //レジスタ番号0とバインド
@@ -982,6 +994,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
 	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
 	rootParameters[5].Descriptor.ShaderRegister = 3;  //レジスタ番号3を使う
+
+	////========スポットライトをShaderで使う========////
+	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	rootParameters[6].Descriptor.ShaderRegister = 4;  //レジスタ番号4を使う
 
 	descriptionRootSignature.pParameters = rootParameters;    //ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);    //配列の長さ
@@ -1246,6 +1263,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	pointLightData->intensity = 1.0f;
 	pointLightData->radius = 20.0f;
 	pointLightData->decay = 10.0f;
+
+
+	////=========スポットライト用のResourceを作成=========////
+
+	//平行光源用のリソースを作る
+	Microsoft::WRL::ComPtr<ID3D12Resource> spotLightResource = CreateBufferResource(device, sizeof(SpotLight));
+	//データを書き込む
+	SpotLight* spotLightData = nullptr;
+	//書き込むためのアドレスを取得
+	spotLightResource->Map(0, nullptr, reinterpret_cast<void**>(&spotLightData));
+	//デフォルト値はとりあえず以下のようにしておく
+	spotLightData->color = { 1.0f,1.0f,1.0f,1.0f };
+	spotLightData->position = { 2.0f,1.25,0.0f };
+	spotLightData->distance = 7.0f;
+	spotLightData->direction = Normalize({ -1.0f,-1.0f,0.0f });
+	spotLightData->intensity = 4.0f;
+	spotLightData->decay = 2.0f;
+	spotLightData->cosAngle = std::cos(std::numbers::pi_v<float> / 3.0f);
+
 
 
 	////=========Index用のあれやこれやを作成する=========////
@@ -1964,8 +2000,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			/*ImGui::DragFloat3("directionalLight", &directionalLightData->direction.x, 0.01f);
 			directionalLightData->direction = Normalize(directionalLightData->direction);*/
 			//ImGui::ColorEdit4("color", &materialData->color.x, 0.01f);
-			ImGui::Checkbox("useMonsterBall", &useMonsterBall);
 			ImGui::End();
+
+			ImGui::Begin("SpotLight");
+			ImGui::DragFloat3("position", &spotLightData->position.x, 0.01f);
+			ImGui::DragFloat("distance", &spotLightData->distance, 0.01f);
+			ImGui::DragFloat("direction", &spotLightData->direction.x, 0.01f);
+			ImGui::DragFloat("cosAngle", &spotLightData->cosAngle, 0.01f);
+			ImGui::DragFloat("intensity", &spotLightData->intensity, 0.01f);
+			ImGui::End();
+
+
 
 			/*ImGui::Begin("Field");
 			ImGui::Checkbox("FieldAcceleration", &FieldAcceleration);
@@ -2077,6 +2122,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootConstantBufferView(4, CameraShaderResource->GetGPUVirtualAddress());
 
 			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress());
+
+			commandList->SetGraphicsRootConstantBufferView(6, spotLightResource->GetGPUVirtualAddress());
 
 
 			//モデル
