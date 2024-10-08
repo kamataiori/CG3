@@ -512,7 +512,7 @@ MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const st
 
 ////////=========Objファイルを読む関数=========////
 
-ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename)
+ModelData LoadModelFile(const std::string& directoryPath, const std::string& filename)
 {
 	// Assimpのインポーターを作成
 	Assimp::Importer importer;
@@ -1336,7 +1336,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//ModelData modelData;
 
 	// モデルの読み込み
-	ModelData modelData = LoadObjFile("Resources", "terrain.obj");
+	ModelData modelData = LoadModelFile("Resources", "terrain.obj");
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
