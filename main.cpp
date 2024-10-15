@@ -145,6 +145,13 @@ struct SpotLight {
 	float padding[2];
 };
 
+//Node
+struct Node {
+	Matrix4x4 localMatrix;  // NodeのTransform
+	std::string name;  // Nodeの名前
+	std::vector<Node> children;  // 子供のNode
+};
+
 //MaterialData構造体
 struct MaterialData {
 	std::string textureFilePath;
@@ -154,6 +161,7 @@ struct MaterialData {
 struct ModelData {
 	std::vector<VertexData>vertices;
 	MaterialData material;
+	Node rootNode;
 };
 
 //Particle構造体
@@ -217,6 +225,7 @@ std::mt19937 randomEngine(seedGenerator());
 struct CameraForGPU {
 	Vector3 worldPosition;
 };
+
 
 
 static const int kWindowWidth = 1280;
@@ -509,6 +518,42 @@ MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const st
 	return materialData;
 }
 
+Node ReadNode(aiNode* node)
+{
+	Node result;
+
+	aiMatrix4x4 aiLocalMatrix = node->mTransformation;  // nodeのlocalMatrixを取得
+	aiLocalMatrix.Transpose();  // 列ベクトル形式を行ベクトル形式に転置
+	result.localMatrix.m[0][0] = aiLocalMatrix[0][0];
+	result.localMatrix.m[0][1] = aiLocalMatrix[0][1];
+	result.localMatrix.m[0][2] = aiLocalMatrix[0][2];
+	result.localMatrix.m[0][3] = aiLocalMatrix[0][3];
+
+	result.localMatrix.m[1][0] = aiLocalMatrix[1][0];
+	result.localMatrix.m[1][1] = aiLocalMatrix[1][1];
+	result.localMatrix.m[1][2] = aiLocalMatrix[1][2];
+	result.localMatrix.m[1][3] = aiLocalMatrix[1][3];
+
+	result.localMatrix.m[2][0] = aiLocalMatrix[2][0];
+	result.localMatrix.m[2][1] = aiLocalMatrix[2][1];
+	result.localMatrix.m[2][2] = aiLocalMatrix[2][2];
+	result.localMatrix.m[2][3] = aiLocalMatrix[2][3];
+
+	result.localMatrix.m[3][0] = aiLocalMatrix[3][0];
+	result.localMatrix.m[3][1] = aiLocalMatrix[3][1];
+	result.localMatrix.m[3][2] = aiLocalMatrix[3][2];
+	result.localMatrix.m[3][3] = aiLocalMatrix[3][3];
+	
+	result.name = node->mName.C_Str();  // Node名を格納
+	result.children.resize(node->mNumChildren);  // 子供の数だけ確保
+	for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
+	{
+		// 再帰的に読んで階層構造を作っていく
+		result.children[childIndex] = ReadNode(node->mChildren[childIndex]);
+	}
+	return result;
+}
+
 
 ////=========Objファイルを読む関数=========////
 
@@ -568,8 +613,12 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 		}
 	}
 
+	// ルートノードを解析してモデルデータに設定
+	modelData.rootNode = ReadNode(scene->mRootNode);
+
 	return modelData;
 }
+
 
 
 ////////=========Particle生成関数=========////
@@ -1137,6 +1186,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 
+	// モデルの読み込み
+	ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
+	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
+	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
+	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
+
+	modelData.material.textureFilePath = "./Resources/uvChecker.png";
+	/*modelData.material.textureFilePath = "./Resources/grass.png";*/
+	//modelData.material.textureFilePath = "./Resources/circle.png";
+
+	//modelData.rootNode = ReadNode(scene->mRootNode);
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+
+
 	////=========Material用のResourceを作る=========////
 
 	//マテリアル用のリソースを作る。今回color1つ分のサイズを用意する
@@ -1334,21 +1402,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//ModelData modelData = LoadObjFile("Resources", "fence.obj");
 
 	//ModelData modelData;
-
-	// モデルの読み込み
-	ModelData modelData = LoadModelFile("Resources", "terrain.obj");
-	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
-	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
-
-
-	modelData.material.textureFilePath = "./Resources/grass.png";
-	//modelData.material.textureFilePath = "./Resources/circle.png";
-
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
 
 
 	////=========VertexBufferViewを作成する=========////
@@ -1637,7 +1690,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//-------基本的-------//
 
 	//Transform変数を作る
-	Transform transform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
+	Transform transform{ {1.5f,1.5f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.6f,0.0f} };
 
 	//Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
 
@@ -1899,7 +1952,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//*wvpData = worldMatrix;
 			//wvpData->WVP = worldMatrix;
 			SphrewvpData->World = worldMatrix;
-			wvpData->World = worldMatrix;
+			//wvpData->World = worldMatrix;
+
+			wvpData->World = modelData.rootNode.localMatrix * worldMatrix;
 
 			Matrix4x4  cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4  viewMatrix = Inverse(cameraMatrix);
@@ -1909,7 +1964,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			*WorldViewProjectionMatrixData = worldviewProjectionMatrix;
 			SphrewvpData->WVP = worldviewProjectionMatrix;
-			wvpData->WVP = worldviewProjectionMatrix;
+			//wvpData->WVP = worldviewProjectionMatrix;
+
+			wvpData->WVP = modelData.rootNode.localMatrix * worldMatrix * worldviewProjectionMatrix;
 
 			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
 			SphrewvpData->WorldInverseTranspose = SphereTranspose;
@@ -2104,7 +2161,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU2);
 			commandList->SetGraphicsRootConstantBufferView(1, SphrewvpResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);
+			//commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);
 
 
 			//-------パーティクル時-------//
