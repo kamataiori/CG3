@@ -4,6 +4,7 @@
 #include "Vector4.h"
 #include "Matrix3x3.h"
 #include "Matrix4x4.h"
+#include "Quaternion.h"
 #include "math.h"
 #include <fstream>
 #include <sstream>
@@ -32,6 +33,8 @@ Matrix4x4  Multiply(const Matrix4x4& m1, const Matrix4x4& m2);
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rot, const Vector3& translate);
 
 Matrix4x4 MakeAffineMatrix();
+
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rot, const Vector3& translate);
 
 //逆行列
 Matrix4x4 Inverse(const Matrix4x4& matrix);

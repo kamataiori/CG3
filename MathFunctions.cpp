@@ -218,6 +218,53 @@ Matrix4x4 MakeAffineMatrix()
 	return MakeAffineMatrix(scale, rot, translate);
 }
 
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rot, const Vector3& translate)
+{
+	Matrix4x4 result;
+
+	// Quaternionから回転行列を生成
+	float xx = rot.x * rot.x;
+	float yy = rot.y * rot.y;
+	float zz = rot.z * rot.z;
+	float xy = rot.x * rot.y;
+	float xz = rot.x * rot.z;
+	float yz = rot.y * rot.z;
+	float wx = rot.w * rot.x;
+	float wy = rot.w * rot.y;
+	float wz = rot.w * rot.z;
+
+	Matrix4x4 rotationMatrix = {
+		1.0f - 2.0f * (yy + zz), 2.0f * (xy - wz),       2.0f * (xz + wy),       0.0f,
+		2.0f * (xy + wz),       1.0f - 2.0f * (xx + zz), 2.0f * (yz - wx),       0.0f,
+		2.0f * (xz - wy),       2.0f * (yz + wx),       1.0f - 2.0f * (xx + yy), 0.0f,
+		0.0f,                   0.0f,                   0.0f,                   1.0f
+	};
+
+	// スケールと回転を合成
+	result.m[0][0] = scale.x * rotationMatrix.m[0][0];
+	result.m[0][1] = scale.x * rotationMatrix.m[0][1];
+	result.m[0][2] = scale.x * rotationMatrix.m[0][2];
+	result.m[0][3] = 0.0f;
+
+	result.m[1][0] = scale.y * rotationMatrix.m[1][0];
+	result.m[1][1] = scale.y * rotationMatrix.m[1][1];
+	result.m[1][2] = scale.y * rotationMatrix.m[1][2];
+	result.m[1][3] = 0.0f;
+
+	result.m[2][0] = scale.z * rotationMatrix.m[2][0];
+	result.m[2][1] = scale.z * rotationMatrix.m[2][1];
+	result.m[2][2] = scale.z * rotationMatrix.m[2][2];
+	result.m[2][3] = 0.0f;
+
+	// 平行移動を設定
+	result.m[3][0] = translate.x;
+	result.m[3][1] = translate.y;
+	result.m[3][2] = translate.z;
+	result.m[3][3] = 1.0f;
+
+	return result;
+}
+
 //逆行列
 Matrix4x4 Inverse(const Matrix4x4& matrix)
 {

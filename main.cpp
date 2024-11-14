@@ -28,6 +28,8 @@
 #include "externals/imgui/imgui.h"
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
+#include <map>
+#include <iostream>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #pragma comment(lib,"d3d12.lib")
@@ -226,6 +228,174 @@ struct CameraForGPU {
 	Vector3 worldPosition;
 };
 
+//------------------------//
+// CG4_Animationここから
+//------------------------//
+
+//=====Keyframeを表現========
+
+//struct KeyframeVector3 {
+//	Vector3 value;  // キーフレームの値
+//	float time;  // キーフレームの時刻(単位は秒)
+//};
+//
+//struct KeyframeQuaternion {
+//	Quaternion value;  // キーフレームの値
+//	float time;  // キーフレームの時刻(単位は秒)
+//};
+
+// 上の二つ or 下どちらでも大丈夫だがtemplate版のほうが拡張は容易
+
+template <typename tValue>
+struct Keyframe {
+	float time;
+	tValue value;
+};
+using KeyframeVector3 = Keyframe<Vector3>;
+using KeyframeQuaternion = Keyframe<Quaternion>;
+
+//=====NodeのAnimation=======
+
+//struct NodeAnimation {
+//	std::vector<KeyframeVector3> translate;
+//	std::vector<KeyframeQuaternion> rotate;
+//	std::vector<KeyframeVector3> scale;
+//};
+
+template<typename tValue>
+struct AnimationCurve {
+	std::vector<Keyframe<tValue>> keyframes;
+};
+
+struct NodeAnimation {
+	AnimationCurve<Vector3> translate;
+	AnimationCurve<Quaternion> rotate;
+	AnimationCurve<Vector3> scale;
+};
+
+//=====Animationを表現する========
+
+struct Animation {
+	float duration;  // アニメーション全体の尺
+	// NodeAnimationの集合。Node名でひけるようにしておく
+	std::map<std::string, NodeAnimation> NodeAnimations;
+};
+
+Vector3 Lerp(const Vector3& start, const Vector3& end, float t)
+{
+	return {
+		start.x + (end.x - start.x) * t,
+		start.y + (end.y - start.y) * t,
+		start.z + (end.z - start.z) * t
+	};
+}
+
+template <typename T>
+T CalculateValue(const std::vector<Keyframe<T>>& keyframes, float time)
+{
+	assert(!keyframes.empty());  // キーがないものは返す値がわからないのでダメ
+	if (keyframes.size() == 1 || time <= keyframes[0].time)
+	{
+		// キーが1つか、時刻がキーフレーム前なら最初の値とする
+		return keyframes[0].value;
+	}
+
+	// 補間のためのループ
+	for (size_t index = 0; index < keyframes.size() - 1; ++index) {
+		size_t nextIndex = index + 1;
+		// indexとnextIndexの2つのkeyframeを取得して範囲内に時刻があるかを判定
+		if (keyframes[index].time <= time && time <= keyframes[nextIndex].time) {
+			// 範囲内なら補間する
+			float t = (time - keyframes[index].time) / (keyframes[nextIndex].time - keyframes[index].time);
+			if constexpr (std::is_same<T, Vector3>::value) {
+				return Lerp(keyframes[index].value, keyframes[nextIndex].value, t);
+			}
+			else if constexpr (std::is_same<T, Quaternion>::value) {
+				return Slerp(keyframes[index].value, keyframes[nextIndex].value, t);
+			}
+		}
+	}
+
+	// ここまできた場合は一番後の時刻よりも後なので最後の値を返す
+	return keyframes.back().value;
+}
+
+
+Quaternion Slerp(const Quaternion& start, const Quaternion& end, float t)
+{
+	// 内積を計算
+	float dot = start.x * end.x + start.y * end.y + start.z * end.z + start.w * end.w;
+
+	// もし内積が負の値なら、endを反転させることで最短経路をとるようにする
+	Quaternion endCorrected = end;
+	if (dot < 0.0f) {
+		endCorrected.x = -end.x;
+		endCorrected.y = -end.y;
+		endCorrected.z = -end.z;
+		endCorrected.w = -end.w;
+		dot = -dot;
+	}
+
+	// 補間ファクターが小さいときは線形補間にフォールバック
+	const float threshold = 0.9995f;
+	if (dot > threshold) {
+		return {
+			start.x + t * (endCorrected.x - start.x),
+			start.y + t * (endCorrected.y - start.y),
+			start.z + t * (endCorrected.z - start.z),
+			start.w + t * (endCorrected.w - start.w)
+		};
+	}
+
+	// Slerp計算
+	float theta = acos(dot);
+	float sinTheta = sqrt(1.0f - dot * dot);
+
+	float factorStart = sin((1 - t) * theta) / sinTheta;
+	float factorEnd = sin(t * theta) / sinTheta;
+
+	return {
+		factorStart * start.x + factorEnd * endCorrected.x,
+		factorStart * start.y + factorEnd * endCorrected.y,
+		factorStart * start.z + factorEnd * endCorrected.z,
+		factorStart * start.w + factorEnd * endCorrected.w
+	};
+}
+
+Quaternion CalculateValue(const std::vector<Keyframe<Quaternion>>& keyframes, float time)
+{
+	// キーがない場合、デフォルトのQuaternionを返す
+	if (keyframes.empty()) {
+		return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; // 単位クォータニオン
+	}
+
+	if (keyframes.size() == 1 || time <= keyframes[0].time)
+	{
+		// キーが1つか、時刻がキーフレーム前なら最初の値とする
+		return keyframes[0].value;
+	}
+
+	// 補間のためのループ
+	for (size_t index = 0; index < keyframes.size() - 1; ++index) {
+		size_t nextIndex = index + 1;
+		// indexとnextIndexの2つのkeyframeを取得して範囲内に時刻があるかを判定
+		if (keyframes[index].time <= time && time <= keyframes[nextIndex].time) {
+			// 範囲内なら補間する
+			float t = (time - keyframes[index].time) / (keyframes[nextIndex].time - keyframes[index].time);
+			return Slerp(keyframes[index].value, keyframes[nextIndex].value, t);
+		}
+	}
+
+	// ここまできた場合は一番後の時刻よりも後なので最後の値を返す
+	return keyframes.back().value;
+}
+
+
+
+
+//------------------------//
+// CG4_Animationここまで
+//------------------------//
 
 
 static const int kWindowWidth = 1280;
@@ -543,7 +713,7 @@ Node ReadNode(aiNode* node)
 	result.localMatrix.m[3][1] = aiLocalMatrix[3][1];
 	result.localMatrix.m[3][2] = aiLocalMatrix[3][2];
 	result.localMatrix.m[3][3] = aiLocalMatrix[3][3];
-	
+
 	result.name = node->mName.C_Str();  // Node名を格納
 	result.children.resize(node->mNumChildren);  // 子供の数だけ確保
 	for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
@@ -619,6 +789,152 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 	return modelData;
 }
 
+//------------------------//
+// CG4_Animationここから
+//------------------------//
+
+
+Animation LoadAnimationFile(const std::string& directoryPath, const std::string& fileName)
+{
+	Animation animation; // 今回作るアニメーション
+
+	Assimp::Importer importer;
+	std::string filePath = directoryPath + "/" + fileName;
+	const aiScene* scene = importer.ReadFile(filePath.c_str(), 0);
+
+	// ファイルの読み込みが成功したか確認
+	if (!scene) {
+		std::cerr << "Error loading animation file: " << importer.GetErrorString() << std::endl;
+		assert(scene && "Failed to load animation file.");
+		return animation; // もしくは適切なエラー処理を行う
+	}
+
+	// アニメーションが含まれているか確認
+	assert(scene->mNumAnimations != 0 && "No animations found in the file.");
+
+	aiAnimation* animationAssimp = scene->mAnimations[0]; // 最初のアニメーションだけ採用。もちろん複数対応するに越したことはない
+
+	// 時間の単位を秒に変換
+	animation.duration = float(animationAssimp->mDuration / animationAssimp->mTicksPerSecond);
+
+	// assimpでは個々のNodeのAnimationをchannelと呼んでいるのでchannelを回してNodeAnimationの情報をとってくる
+	for (uint32_t channelIndex = 0; channelIndex < animationAssimp->mNumChannels; ++channelIndex) {
+		aiNodeAnim* nodeAnimationAssimp = animationAssimp->mChannels[channelIndex];
+		NodeAnimation& nodeAnimation = animation.NodeAnimations[nodeAnimationAssimp->mNodeName.C_Str()];
+
+		// 各PositionKeysをKeyframeVector3としてNodeAnimationに追加
+		for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumPositionKeys; ++keyIndex) {
+			aiVectorKey& keyAssimp = nodeAnimationAssimp->mPositionKeys[keyIndex];
+			KeyframeVector3 keyframe;
+			keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond); // ここでも秒に変換
+			keyframe.value = { -keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z }; // 右手→左手
+			nodeAnimation.translate.keyframes.push_back(keyframe);
+		}
+
+		// 各RotationKeysをKeyframeQuaternionとしてNodeAnimationに追加
+		if (nodeAnimationAssimp->mNumRotationKeys > 0)
+		{
+			// RotationKeysが存在するかチェック
+			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumRotationKeys; ++keyIndex) {
+				aiQuatKey& keyAssimp = nodeAnimationAssimp->mRotationKeys[keyIndex];
+				KeyframeQuaternion keyframe;
+				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
+				keyframe.value = { keyAssimp.mValue.x, -keyAssimp.mValue.y, -keyAssimp.mValue.z, keyAssimp.mValue.w }; // 右手→左手
+				nodeAnimation.rotate.keyframes.push_back(keyframe);
+			}
+		}
+
+		// 各ScalingKeysをKeyframeVector3としてNodeAnimationに追加
+		if (nodeAnimationAssimp->mNumScalingKeys > 0)
+		{
+			// ScalingKeysが存在するかチェック
+			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumScalingKeys; ++keyIndex) {
+				aiVectorKey& keyAssimp = nodeAnimationAssimp->mScalingKeys[keyIndex];
+				KeyframeVector3 keyframe;
+				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
+				keyframe.value = { keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z };
+				nodeAnimation.scale.keyframes.push_back(keyframe);
+			}
+		}
+
+	}
+
+	// 解析完了
+	return animation;
+}
+
+
+//Animation LoadAnimationFile(const std::string& directoryPath, const std::string& fileName)
+//{
+//	Animation animation; // 今回作るアニメーション
+//
+//	Assimp::Importer importer;
+//	std::string filePath = directoryPath + "/" + fileName;
+//	const aiScene* scene = importer.ReadFile(filePath.c_str(), aiProcess_Triangulate | aiProcess_GenSmoothNormals);
+//
+//	// ファイルの読み込みが成功したか確認
+//	if (!scene) {
+//		std::cerr << "Failed to load animation file: " << filePath << "\nError: " << importer.GetErrorString() << std::endl;
+//		return animation; // エラー時に空のアニメーションを返す
+//	}
+//
+//	// アニメーションが含まれているか確認
+//	if (scene->mNumAnimations == 0) {
+//		std::cerr << "No animations found in the file: " << filePath << std::endl;
+//		return animation; // アニメーションがない場合も空のアニメーションを返す
+//	}
+//
+//	aiAnimation* animationAssimp = scene->mAnimations[0]; // 最初のアニメーションだけ採用
+//
+//	// 時間の単位を秒に変換
+//	animation.duration = float(animationAssimp->mDuration / animationAssimp->mTicksPerSecond);
+//
+//	// assimpでは個々のNodeのAnimationをchannelと呼んでいるのでchannelを回してNodeAnimationの情報をとってくる
+//	for (uint32_t channelIndex = 0; channelIndex < animationAssimp->mNumChannels; ++channelIndex) {
+//		aiNodeAnim* nodeAnimationAssimp = animationAssimp->mChannels[channelIndex];
+//		NodeAnimation& nodeAnimation = animation.NodeAnimations[nodeAnimationAssimp->mNodeName.C_Str()];
+//
+//		// 各PositionKeysをKeyframeVector3としてNodeAnimationに追加
+//		if (nodeAnimationAssimp->mNumPositionKeys > 0) {  // PositionKeysが存在するかチェック
+//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumPositionKeys; ++keyIndex) {
+//				aiVectorKey& keyAssimp = nodeAnimationAssimp->mPositionKeys[keyIndex];
+//				KeyframeVector3 keyframe;
+//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond); // 秒に変換
+//				keyframe.value = { -keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z }; // 右手→左手
+//				nodeAnimation.translate.keyframes.push_back(keyframe);
+//			}
+//		}
+//
+//		// 各RotationKeysをKeyframeQuaternionとしてNodeAnimationに追加
+//		if (nodeAnimationAssimp->mNumRotationKeys > 0) {  // RotationKeysが存在するかチェック
+//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumRotationKeys; ++keyIndex) {
+//				aiQuatKey& keyAssimp = nodeAnimationAssimp->mRotationKeys[keyIndex];
+//				KeyframeQuaternion keyframe;
+//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
+//				keyframe.value = { keyAssimp.mValue.x, -keyAssimp.mValue.y, -keyAssimp.mValue.z, keyAssimp.mValue.w }; // 右手→左手
+//				nodeAnimation.rotate.keyframes.push_back(keyframe);
+//			}
+//		}
+//
+//		// 各ScalingKeysをKeyframeVector3としてNodeAnimationに追加
+//		if (nodeAnimationAssimp->mNumScalingKeys > 0) {  // ScalingKeysが存在するかチェック
+//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumScalingKeys; ++keyIndex) {
+//				aiVectorKey& keyAssimp = nodeAnimationAssimp->mScalingKeys[keyIndex];
+//				KeyframeVector3 keyframe;
+//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
+//				keyframe.value = { keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z };
+//				nodeAnimation.scale.keyframes.push_back(keyframe);
+//			}
+//		}
+//	}
+//
+//	// 解析完了
+//	return animation;
+//}
+
+//------------------------//
+// CG4_Animationここまで
+//------------------------//
 
 
 ////////=========Particle生成関数=========////
@@ -1187,7 +1503,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// モデルの読み込み
-	ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
+	//ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
+	ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
 	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
@@ -1196,8 +1514,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
 
-	modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	/*modelData.material.textureFilePath = "./Resources/grass.png";*/
+	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
+	modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";
 	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	//modelData.rootNode = ReadNode(scene->mRootNode);
@@ -1690,7 +2008,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//-------基本的-------//
 
 	//Transform変数を作る
-	Transform transform{ {1.5f,1.5f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.6f,0.0f} };
+	Transform transform{ {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.6f,0.0f} };
 
 	//Transform sphretransform{ {1.0f,1.0f,1.0f},{0.0f,1.55f,0.0f},{0.0f,0.6f,0.0f} };
 
@@ -1812,7 +2130,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	bool isParticleAlive = false;
 	bool FieldAcceleration = false;*/
 
-	///
+
+	//------------------------//
+	// CG4_Animationここから
+	//------------------------//
+
+
+	//======Animationを再生する========
+
+	// 再生中の時刻を管理する変数
+	float animationTime = 0.0f;
+
+	// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
+	animationTime += 1.0f / 60.0f;  // 時間を進める
+	animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
+
+	NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+	Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+	Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
+	Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
+
+	Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
+
+
+	//------------------------//
+	// CG4_Animationここまで
+	//------------------------//
+
+
+
+
 
 	//メインループ
 	//ウィンドウの×ボタンが押されるまでループ
@@ -1946,6 +2293,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			//transform.rotate.y += 0.02f;
+
+
+			/*Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+			Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
+			Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
+			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
+
+
+
 
 
 			Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
