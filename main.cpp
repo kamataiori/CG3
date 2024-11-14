@@ -290,6 +290,16 @@ Vector3 Lerp(const Vector3& start, const Vector3& end, float t)
 	};
 }
 
+Quaternion Lerp(const Quaternion& start, const Quaternion& end, float t)
+{
+	return {
+		start.x + (end.x - start.x) * t,
+		start.y + (end.y - start.y) * t,
+		start.z + (end.z - start.z) * t,
+		start.w + (end.w - start.w) * t,
+	};
+}
+
 template <typename T>
 T CalculateValue(const std::vector<Keyframe<T>>& keyframes, float time)
 {
@@ -365,9 +375,9 @@ Quaternion Slerp(const Quaternion& start, const Quaternion& end, float t)
 Quaternion CalculateValue(const std::vector<Keyframe<Quaternion>>& keyframes, float time)
 {
 	// キーがない場合、デフォルトのQuaternionを返す
-	if (keyframes.empty()) {
-		return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; // 単位クォータニオン
-	}
+	//if (keyframes.empty()) {
+	//	return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; // 単位クォータニオン
+	//}
 
 	if (keyframes.size() == 1 || time <= keyframes[0].time)
 	{
@@ -2138,20 +2148,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//======Animationを再生する========
 
-	// 再生中の時刻を管理する変数
+	//// 再生中の時刻を管理する変数
+	//float animationTime = 0.0f;
+
+	//// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
+	//animationTime += 1.0f / 60.0f;  // 時間を進める
+	//animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
+
+	//NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+	//Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+	//Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
+	//Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
+
+	//Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
+
 	float animationTime = 0.0f;
-
-	// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
-	animationTime += 1.0f / 60.0f;  // 時間を進める
-	animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
-
-	NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
-	Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
-	Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
-	Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
-
-	Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
-
 
 	//------------------------//
 	// CG4_Animationここまで
@@ -2294,12 +2305,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//transform.rotate.y += 0.02f;
 
+			// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
 
-			/*Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+ 
+			animationTime += 1.0f / 60.0f;  // 時間を進める
+			animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
+
+			NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+			Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
 			Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
 			Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
-			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
 
+			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
 
 
 
@@ -2310,7 +2327,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SphrewvpData->World = worldMatrix;
 			//wvpData->World = worldMatrix;
 
-			wvpData->World = modelData.rootNode.localMatrix * worldMatrix;
+			wvpData->World = /*modelData.rootNode.*/localMatrix * worldMatrix;
 
 			Matrix4x4  cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4  viewMatrix = Inverse(cameraMatrix);
@@ -2322,7 +2339,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SphrewvpData->WVP = worldviewProjectionMatrix;
 			//wvpData->WVP = worldviewProjectionMatrix;
 
-			wvpData->WVP = modelData.rootNode.localMatrix * worldMatrix * worldviewProjectionMatrix;
+			wvpData->WVP =/* modelData.rootNode.*/localMatrix * worldMatrix * worldviewProjectionMatrix;
 
 			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
 			SphrewvpData->WorldInverseTranspose = SphereTranspose;
