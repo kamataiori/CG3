@@ -11,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 #include "wrl.h"
+#include <optional>
 
 #include "ResourceObject.h"
 
@@ -147,8 +148,23 @@ struct SpotLight {
 	float padding[2];
 };
 
+//=====EulerTransform=========
+
+struct EulerTransform {
+	Vector3 scale;
+	Vector3 rotate;  // Eulerでの回転
+	Vector3 translate;
+};
+
+struct QuaternionTransform {
+	Vector3 scale;
+	Quaternion rotate;
+	Vector3 translate;
+};
+
 //Node
 struct Node {
+	QuaternionTransform transform;
 	Matrix4x4 localMatrix;  // NodeのTransform
 	std::string name;  // Nodeの名前
 	std::vector<Node> children;  // 子供のNode
@@ -399,6 +415,40 @@ Quaternion CalculateValue(const std::vector<Keyframe<Quaternion>>& keyframes, fl
 	// ここまできた場合は一番後の時刻よりも後なので最後の値を返す
 	return keyframes.back().value;
 }
+
+////=====EulerTransform=========
+//
+//struct EulerTransform {
+//	Vector3 scale;
+//	Vector3 rotate;  // Eulerでの回転
+//	Vector3 translate;
+//};
+//
+//struct QuaternionTransform {
+//	Vector3 scale;
+//	Quaternion rotate;
+//	Vector3 translate;
+//};
+
+
+struct Joint {
+	QuaternionTransform transform;  // Transform情報
+	Matrix4x4 localMatrix;  // localMatrix
+	Matrix4x4 skeletonSpaceMatrix;  // skeletonSpaceでの変換行列
+	std::string name;  // 名前
+	std::vector<int32_t> children;  // 子JointのIndexのリスト。いなければ空き
+	int32_t index; // 自身のIndex
+	std::optional<int32_t> parent;  // 親JointのIndex。いなければnull
+};
+
+struct Skeleton {
+	int32_t root;  // RootJointのIndex
+	std::map<std::string, int32_t> jointMap;  // Joint名とIndexとの辞書
+	std::vector<Joint> joints;  // 所属しているジョイント
+};
+
+
+
 
 
 
@@ -702,37 +752,35 @@ Node ReadNode(aiNode* node)
 {
 	Node result;
 
-	aiMatrix4x4 aiLocalMatrix = node->mTransformation;  // nodeのlocalMatrixを取得
-	aiLocalMatrix.Transpose();  // 列ベクトル形式を行ベクトル形式に転置
-	result.localMatrix.m[0][0] = aiLocalMatrix[0][0];
-	result.localMatrix.m[0][1] = aiLocalMatrix[0][1];
-	result.localMatrix.m[0][2] = aiLocalMatrix[0][2];
-	result.localMatrix.m[0][3] = aiLocalMatrix[0][3];
+	// `aiMatrix4x4`からスケール、回転、平行移動成分を抽出
+	aiVector3D scale, translate;
+	aiQuaternion rotate;
+	node->mTransformation.Decompose(scale, rotate, translate);  // Assimpの関数で分解
 
-	result.localMatrix.m[1][0] = aiLocalMatrix[1][0];
-	result.localMatrix.m[1][1] = aiLocalMatrix[1][1];
-	result.localMatrix.m[1][2] = aiLocalMatrix[1][2];
-	result.localMatrix.m[1][3] = aiLocalMatrix[1][3];
+	// スケールの設定（符号反転なし）
+	result.transform.scale = { scale.x, scale.y, scale.z };
 
-	result.localMatrix.m[2][0] = aiLocalMatrix[2][0];
-	result.localMatrix.m[2][1] = aiLocalMatrix[2][1];
-	result.localMatrix.m[2][2] = aiLocalMatrix[2][2];
-	result.localMatrix.m[2][3] = aiLocalMatrix[2][3];
+	// 回転の設定（YとZの符号を反転して右手系→左手系に変更）
+	result.transform.rotate = { rotate.x, -rotate.y, -rotate.z, rotate.w };
 
-	result.localMatrix.m[3][0] = aiLocalMatrix[3][0];
-	result.localMatrix.m[3][1] = aiLocalMatrix[3][1];
-	result.localMatrix.m[3][2] = aiLocalMatrix[3][2];
-	result.localMatrix.m[3][3] = aiLocalMatrix[3][3];
+	// 平行移動の設定（X軸反転で右手系→左手系に変更）
+	result.transform.translate = { -translate.x, translate.y, translate.z };
 
-	result.name = node->mName.C_Str();  // Node名を格納
-	result.children.resize(node->mNumChildren);  // 子供の数だけ確保
+	// `MakeAffineMatrix`を使用して`localMatrix`を構築
+	result.localMatrix = MakeAffineMatrix(result.transform.scale, result.transform.rotate, result.transform.translate);
+
+	// ノード名と子ノードの設定
+	result.name = node->mName.C_Str();
+	result.children.resize(node->mNumChildren);
 	for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex)
 	{
-		// 再帰的に読んで階層構造を作っていく
+		// 再帰的に読み込んで階層構造を作成
 		result.children[childIndex] = ReadNode(node->mChildren[childIndex]);
 	}
+
 	return result;
 }
+
 
 
 ////=========Objファイルを読む関数=========////
@@ -941,6 +989,88 @@ Animation LoadAnimationFile(const std::string& directoryPath, const std::string&
 //	// 解析完了
 //	return animation;
 //}
+
+
+//-----NodeからJointを作る-----//
+
+int32_t CreateJoint(const Node& node, const std::optional<int32_t>& parent, std::vector<Joint>& joints)
+{
+	Joint joint;
+	joint.name = node.name;
+	joint.localMatrix = node.localMatrix;
+	joint.skeletonSpaceMatrix = MakeIdentity4x4();
+	joint.transform = node.transform;
+	joint.index = int32_t(joints.size());  // 現在登録されている数をIndexに
+	joint.parent = parent;
+	joints.push_back(joint);  // SkeletonのJoint列に追加
+	for (const Node& child : node.children)
+	{
+		// 子Jointを作成し、そのIndexを登録
+		int32_t childIndex = CreateJoint(child, joint.index, joints);
+		joints[joint.index].children.push_back(childIndex);
+	}
+
+	// 自身のIndexを返す
+	return joint.index;
+
+}
+
+
+//------Nodeの階層からSkeletonを作る------//
+
+Skeleton CretaeSkeleton(const Node& rootNode)
+{
+	Skeleton skeleton;
+	skeleton.root = CreateJoint(rootNode, {}, skeleton.joints);
+
+	// 名前とindexのマッピングを行いアクセスしやすくする
+	for (const Joint& joint : skeleton.joints) {
+		skeleton.jointMap.emplace(joint.name, joint.index);
+	}
+
+	return skeleton;
+
+}
+
+
+//-----Skeletonの更新-----//
+
+void Update(Skeleton& skeleton)
+{
+	// すべてのJointを更新。親が若いので通常ループで処理可能になっている
+	for (Joint& joint : skeleton.joints)
+	{
+		joint.localMatrix = MakeAffineMatrix(joint.transform.scale, joint.transform.rotate, joint.transform.translate);
+		// 親がいれば親の行列をかける
+		if (joint.parent)
+		{
+			joint.skeletonSpaceMatrix = joint.localMatrix * skeleton.joints[*joint.parent].skeletonSpaceMatrix;
+		}
+		else 
+		{
+			joint.skeletonSpaceMatrix = joint.localMatrix;
+		}
+	}
+}
+
+
+//-----Animationを適用する-----//
+
+void AppAnimation(Skeleton& skeleton, const Animation& animation, float animationTime)
+{
+	for (Joint& joint : skeleton.joints)
+	{
+		// 対象のJointのAnimationがあれば、値の適用を行う。下記のif文はC++17から可能になった初期化付きif文。
+		if (auto it = animation.NodeAnimations.find(joint.name); it != animation.NodeAnimations.end())
+		{
+			const NodeAnimation& rootNodeAnimation = (*it).second;
+			joint.transform.translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+			joint.transform.rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
+			joint.transform.scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
+		}
+	}
+}
+
 
 //------------------------//
 // CG4_Animationここまで
@@ -1514,8 +1644,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// モデルの読み込み
 	//ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
-	ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
-	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+
+	/*ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");*/
+
+	ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
+	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");
+
 	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
 	modelData.vertices.push_back({ .position = {-1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
@@ -1525,7 +1660,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
 
 	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";
+	/*modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";*/
+	modelData.material.textureFilePath = "./Resources/human/white.png";
 	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	//modelData.rootNode = ReadNode(scene->mRootNode);
@@ -2163,6 +2299,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
 
 	float animationTime = 0.0f;
+	Skeleton skeleton = CretaeSkeleton(modelData.rootNode);
 
 	//------------------------//
 	// CG4_Animationここまで
@@ -2307,16 +2444,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
 
- 
+
 			animationTime += 1.0f / 60.0f;  // 時間を進める
 			animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
+			AppAnimation(skeleton, animation, animationTime);
+			Update(skeleton);
 
-			NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+			/*NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
 			Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
 			Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
 			Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
 
-			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
+			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
+
 
 
 
@@ -2327,7 +2467,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SphrewvpData->World = worldMatrix;
 			//wvpData->World = worldMatrix;
 
-			wvpData->World = /*modelData.rootNode.*/localMatrix * worldMatrix;
+			wvpData->World = modelData.rootNode.localMatrix * worldMatrix;
 
 			Matrix4x4  cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4  viewMatrix = Inverse(cameraMatrix);
@@ -2339,7 +2479,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SphrewvpData->WVP = worldviewProjectionMatrix;
 			//wvpData->WVP = worldviewProjectionMatrix;
 
-			wvpData->WVP =/* modelData.rootNode.*/localMatrix * worldMatrix * worldviewProjectionMatrix;
+			//wvpData->WVP =/* modelData.rootNode.*/localMatrix * worldMatrix * worldviewProjectionMatrix;
+			wvpData->WVP = worldMatrix * worldviewProjectionMatrix;
 
 			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
 			SphrewvpData->WorldInverseTranspose = SphereTranspose;
