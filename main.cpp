@@ -819,16 +819,15 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 			}
 		}
 
-		for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex)
-		{
+		for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex) {
 			aiVector3D& position = mesh->mVertices[vertexIndex];
 			aiVector3D& normal = mesh->mNormals[vertexIndex];
 			aiVector3D& texcoord = mesh->mTextureCoords[0][vertexIndex];
-			// 右手系→左手系への変換を忘れずに
 			modelData.vertices[vertexIndex].position = { -position.x , position.y , position.z , 1.0f };
 			modelData.vertices[vertexIndex].normal = { -normal.x , normal.y , normal.z };
 			modelData.vertices[vertexIndex].texcoord = { texcoord.x , texcoord.y };
 		}
+
 	}
 
 	// Materialを解析する
