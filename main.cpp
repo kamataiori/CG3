@@ -178,6 +178,7 @@ struct MaterialData {
 //ModelData構造体
 struct ModelData {
 	std::vector<VertexData>vertices;
+	std::vector<uint32_t> indices;
 	MaterialData material;
 	Node rootNode;
 };
@@ -802,31 +803,31 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 		aiMesh* mesh = scene->mMeshes[meshIndex];
 		assert(mesh->HasNormals()); // 法線がないMeshは非対応
 		assert(mesh->HasTextureCoords(0)); // テクスチャ座標がないMeshは非対応
+		modelData.vertices.resize(mesh->mNumVertices); // 最初に頂点数のメモリを確保しておく
 
-		// Faceを解析する
-		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
+		// Indexを解析する
+		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex)
+		{
 			aiFace& face = mesh->mFaces[faceIndex];
 			assert(face.mNumIndices == 3); // 三角形のみサポート
 
-			// Vertexを解析する
-			for (uint32_t element = 0; element < face.mNumIndices; ++element) {
+			for (uint32_t element = 0; element < face.mNumIndices; ++element)
+			{
 				uint32_t vertexIndex = face.mIndices[element];
+				modelData.indices.push_back(vertexIndex);
 
-				aiVector3D position = mesh->mVertices[vertexIndex];
-				aiVector3D normal = mesh->mNormals[vertexIndex];
-				aiVector3D texcoord = mesh->mTextureCoords[0][vertexIndex];
-
-				VertexData vertex;
-				vertex.position = { position.x, position.y, position.z, 1.0f };
-				vertex.normal = { normal.x, normal.y, normal.z };
-				vertex.texcoord = { texcoord.x, texcoord.y };
-
-				// 右手系 -> 左手系変換
-				vertex.position.x *= -1.0f;
-				vertex.normal.x *= -1.0f;
-
-				modelData.vertices.push_back(vertex);
 			}
+		}
+
+		for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex)
+		{
+			aiVector3D& position = mesh->mVertices[vertexIndex];
+			aiVector3D& normal = mesh->mNormals[vertexIndex];
+			aiVector3D& texcoord = mesh->mTextureCoords[0][vertexIndex];
+			// 右手系→左手系への変換を忘れずに
+			modelData.vertices[vertexIndex].position = { -position.x , position.y , position.z , 1.0f };
+			modelData.vertices[vertexIndex].normal = { -normal.x , normal.y , normal.z };
+			modelData.vertices[vertexIndex].texcoord = { texcoord.x , texcoord.y };
 		}
 	}
 
@@ -1046,7 +1047,7 @@ void Update(Skeleton& skeleton)
 		{
 			joint.skeletonSpaceMatrix = joint.localMatrix * skeleton.joints[*joint.parent].skeletonSpaceMatrix;
 		}
-		else 
+		else
 		{
 			joint.skeletonSpaceMatrix = joint.localMatrix;
 		}
@@ -1569,7 +1570,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	//裏面(時計回り)を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 	//三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
@@ -1645,11 +1646,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// モデルの読み込み
 	//ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
 
-	/*ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
-	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");*/
+	ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
 
-	ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
-	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");
+	/*ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
+	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");*/
 
 	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
@@ -1660,13 +1661,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
 
 	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	/*modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";*/
-	modelData.material.textureFilePath = "./Resources/human/white.png";
+	modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";
+	//modelData.material.textureFilePath = "./Resources/human/white.png";
 	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	//modelData.rootNode = ReadNode(scene->mRootNode);
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+
+
+	//------------------------//
+	// CG4_Animationここから
+	//------------------------//
+
+
+	////=========ResourceとViewを作成して描画=========////
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> indexResource = CreateBufferResource(device, sizeof(uint32_t) * modelData.indices.size());
+
+
+
+	//------------------------//
+	// CG4_Animationここまで
+	//------------------------//
 
 
 	////=========Material用のResourceを作る=========////
@@ -1789,17 +1806,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	////=========Index用のあれやこれやを作成する=========////
 
+	//------------------------//
+	// CG4_Animationここから
+	//------------------------//
+
 	//Resourceを作成
-	Microsoft::WRL::ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
+	//Microsoft::WRL::ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * modelData.indices.size());
 
 	//Viewを作成する
 	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
 	//リソースの先頭アドレスから使う
-	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
+	indexBufferViewSprite.BufferLocation = indexResource->GetGPUVirtualAddress();
 	//使用するリソースのサイズはインデックス6つ分のサイズ
-	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
+	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * modelData.indices.size();
 	//インデックスはuint32_tとする
 	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
+
+	uint32_t* mappedIndex = nullptr;
+	indexResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedIndex));
+	std::memcpy(mappedIndex, modelData.indices.data(), sizeof(uint32_t) * modelData.indices.size());
+
+
+	//------------------------//
+	// CG4_Animationここまで
+	//------------------------//
 
 
 	////=========Resourceの作成=========////
@@ -1921,14 +1951,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//////=========IndexResourceにデータを書き込む=========////
 
 	//インデックスリソースにデータを書き込む
-	uint32_t* indexDataSprite = nullptr;
+	/*uint32_t* indexDataSprite = nullptr;
 	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
 	indexDataSprite[0] = 0;
 	indexDataSprite[1] = 1;
 	indexDataSprite[2] = 2;
 	indexDataSprite[3] = 1;
 	indexDataSprite[4] = 3;
-	indexDataSprite[5] = 2;
+	indexDataSprite[5] = 2;*/
 
 	//////=========ResourceSpriteにデータを書き込む=========////
 
@@ -2285,20 +2315,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//======Animationを再生する========
 
 	//// 再生中の時刻を管理する変数
-	//float animationTime = 0.0f;
+	float animationTime = 0.0f;
 
 	//// 時刻を進めて、指定した時刻の各種データを取得し、localMatrixを生成する
 	//animationTime += 1.0f / 60.0f;  // 時間を進める
 	//animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
 
-	//NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
-	//Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
-	//Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
-	//Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
+	/*NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+	Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
+	Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
+	Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
 
-	//Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
+	Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
 
-	float animationTime = 0.0f;
+	//float animationTime = 0.0f;
 	Skeleton skeleton = CretaeSkeleton(modelData.rootNode);
 
 	//------------------------//
@@ -2450,12 +2480,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			AppAnimation(skeleton, animation, animationTime);
 			Update(skeleton);
 
-			/*NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+			NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
 			Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
 			Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
 			Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
 
-			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
+			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
 
 
 
@@ -2479,7 +2509,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SphrewvpData->WVP = worldviewProjectionMatrix;
 			//wvpData->WVP = worldviewProjectionMatrix;
 
-			//wvpData->WVP =/* modelData.rootNode.*/localMatrix * worldMatrix * worldviewProjectionMatrix;
+			//wvpData->WVP = /*modelData.rootNode.*/localMatrix * worldMatrix * worldviewProjectionMatrix;
 			wvpData->WVP = worldMatrix * worldviewProjectionMatrix;
 
 			Matrix4x4 SphereTranspose = transpose(Inverse(worldMatrix));
@@ -2640,6 +2670,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetPipelineState(graphicsPipelineState.Get());    //PSOを設定
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
 			commandList->IASetIndexBuffer(&startBufferViewSprite);
+			//------------------------//
+	        // CG4_Animationここから
+	        //------------------------//
+			
+			//commandList->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
+			commandList->IASetIndexBuffer(&indexBufferViewSprite);
+			//------------------------//
+	        // CG4_Animationここから
+	        //------------------------//
+	
 			//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
@@ -2669,7 +2709,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			//モデル
-			commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
+			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
+			commandList->DrawIndexedInstanced(36, 36, 0, 0, 0);
+			//UINT(modelData.indices.size())
 
 			//球
 			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
