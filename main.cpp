@@ -803,7 +803,9 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 		aiMesh* mesh = scene->mMeshes[meshIndex];
 		assert(mesh->HasNormals()); // 法線がないMeshは非対応
 		assert(mesh->HasTextureCoords(0)); // テクスチャ座標がないMeshは非対応
+
 		modelData.vertices.resize(mesh->mNumVertices); // 最初に頂点数のメモリを確保しておく
+		Log("// Processing mesh index: " + std::to_string(meshIndex) + ", Number of vertices: " + std::to_string(mesh->mNumVertices) + "\n");
 
 		// Indexを解析する
 		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex)
@@ -811,23 +813,41 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 			aiFace& face = mesh->mFaces[faceIndex];
 			assert(face.mNumIndices == 3); // 三角形のみサポート
 
+			Log("// Processing face index: " + std::to_string(faceIndex) + "\n");
+			Log("// Number of indices in face: " + std::to_string(face.mNumIndices) + "\n");
+			Log("// Vertex indices: " + std::to_string(face.mIndices[0]) + ", " +
+				std::to_string(face.mIndices[1]) + ", " +
+				std::to_string(face.mIndices[2]) + "\n");
+
 			for (uint32_t element = 0; element < face.mNumIndices; ++element)
 			{
 				uint32_t vertexIndex = face.mIndices[element];
 				modelData.indices.push_back(vertexIndex);
-
 			}
 		}
+		Log("// Total indices size after processing mesh: " + std::to_string(modelData.indices.size()) + "\n");
 
+		// 頂点データを解析する
 		for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex) {
 			aiVector3D& position = mesh->mVertices[vertexIndex];
 			aiVector3D& normal = mesh->mNormals[vertexIndex];
 			aiVector3D& texcoord = mesh->mTextureCoords[0][vertexIndex];
+
 			modelData.vertices[vertexIndex].position = { -position.x , position.y , position.z , 1.0f };
 			modelData.vertices[vertexIndex].normal = { -normal.x , normal.y , normal.z };
 			modelData.vertices[vertexIndex].texcoord = { texcoord.x , texcoord.y };
-		}
 
+			Log("// Vertex index: " + std::to_string(vertexIndex) + "\n");
+			Log("//   Position: (" + std::to_string(modelData.vertices[vertexIndex].position.x) + ", " +
+				std::to_string(modelData.vertices[vertexIndex].position.y) + ", " +
+				std::to_string(modelData.vertices[vertexIndex].position.z) + ")\n");
+			Log("//   Normal: (" + std::to_string(modelData.vertices[vertexIndex].normal.x) + ", " +
+				std::to_string(modelData.vertices[vertexIndex].normal.y) + ", " +
+				std::to_string(modelData.vertices[vertexIndex].normal.z) + ")\n");
+			Log("//   Texcoord: (" + std::to_string(modelData.vertices[vertexIndex].texcoord.x) + ", " +
+				std::to_string(modelData.vertices[vertexIndex].texcoord.y) + ")\n");
+		}
+		Log("// Total vertices size after processing mesh: " + std::to_string(modelData.vertices.size()) + "\n");
 	}
 
 	// Materialを解析する
@@ -838,6 +858,7 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 			aiString textureFilePath;
 			material->GetTexture(aiTextureType_DIFFUSE, 0, &textureFilePath);
 			modelData.material.textureFilePath = directoryPath + "/" + textureFilePath.C_Str();
+			Log("// Texture file path: " + modelData.material.textureFilePath + "\n");
 		}
 	}
 
@@ -846,6 +867,8 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 
 	return modelData;
 }
+
+
 
 //------------------------//
 // CG4_Animationここから
