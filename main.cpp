@@ -1570,9 +1570,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	//裏面(時計回り)を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
 	//三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
+	//カリングしない(裏面も表示させる)
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 
 
 	////=========ShaderをCompileする=========////
@@ -2671,15 +2673,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
 			commandList->IASetIndexBuffer(&startBufferViewSprite);
 			//------------------------//
-	        // CG4_Animationここから
-	        //------------------------//
-			
+			// CG4_Animationここから
+			//------------------------//
+
 			//commandList->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 			commandList->IASetIndexBuffer(&indexBufferViewSprite);
 			//------------------------//
-	        // CG4_Animationここから
-	        //------------------------//
-	
+			// CG4_Animationここから
+			//------------------------//
+
 			//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
@@ -2710,7 +2712,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//モデル
 			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
-			commandList->DrawIndexedInstanced(36, 36, 0, 0, 0);
+			commandList->DrawIndexedInstanced(UINT(modelData.vertices.size()), UINT(modelData.vertices.size()), 0, 0, 0);
 			//UINT(modelData.indices.size())
 
 			//球
