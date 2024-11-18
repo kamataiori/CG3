@@ -756,9 +756,19 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 		assert(mesh->HasTextureCoords(0)); // テクスチャ座標がないMeshは非対応
 
 		// Faceを解析する
+		//Log("Number of faces: " + std::to_string(mesh->mNumFaces) + "\n"); // ここで面の数を出力
 		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
 			aiFace& face = mesh->mFaces[faceIndex];
 			assert(face.mNumIndices == 3); // 三角形のみサポート
+
+			Log("Processing face index: " + std::to_string(faceIndex) + "\n");
+			Log("Number of indices in face: " + std::to_string(face.mNumIndices) + "\n");
+
+			if (face.mNumIndices == 3) {
+				Log("Vertex indices: " + std::to_string(face.mIndices[0]) + ", " +
+					std::to_string(face.mIndices[1]) + ", " +
+					std::to_string(face.mIndices[2]) + "\n");
+			}
 
 			// Vertexを解析する
 			for (uint32_t element = 0; element < face.mNumIndices; ++element) {
@@ -778,6 +788,26 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 				vertex.normal.x *= -1.0f;
 
 				modelData.vertices.push_back(vertex);
+
+				// 各頂点の位置、法線、テクスチャ座標が正しく取得されているかを確認する
+				Log("Vertex Position: (" + std::to_string(position.x) + ", " +
+					std::to_string(position.y) + ", " + std::to_string(position.z) + ")\n");
+				Log("Vertex Normal: (" + std::to_string(normal.x) + ", " +
+					std::to_string(normal.y) + ", " + std::to_string(normal.z) + ")\n");
+				Log("Vertex Texcoord: (" + std::to_string(texcoord.x) + ", " +
+					std::to_string(texcoord.y) + ")\n");
+
+				// 右手系から左手系への変換が正しく機能しているかを確認する
+				Log("Converted Position: (" + std::to_string(vertex.position.x) + ", " +
+					std::to_string(vertex.position.y) + ", " + std::to_string(vertex.position.z) + ")\n");
+				Log("Converted Normal: (" + std::to_string(vertex.normal.x) + ", " +
+					std::to_string(vertex.normal.y) + ", " + std::to_string(vertex.normal.z) + ")\n");
+
+
+
+				// ここでサイズを出力
+				Log("Current vertices size: " + std::to_string(modelData.vertices.size()) + "\n");
+
 			}
 		}
 	}
@@ -785,6 +815,9 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 	// Materialを解析する
 	for (uint32_t materialIndex = 0; materialIndex < scene->mNumMaterials; ++materialIndex) {
 		aiMaterial* material = scene->mMaterials[materialIndex];
+
+		Log("Texture File Path: " + modelData.material.textureFilePath + "\n");
+
 
 		if (material->GetTextureCount(aiTextureType_DIFFUSE) != 0) {
 			aiString textureFilePath;
