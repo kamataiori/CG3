@@ -1592,7 +1592,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	//裏面(時計回り)を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	//rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
 	//三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 	//カリングしない(裏面も表示させる)
@@ -2734,7 +2734,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			//モデル
 			//commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
-			commandList->DrawIndexedInstanced(UINT(modelData.vertices.size()), UINT(modelData.vertices.size()), 0, 0, 0);
+			commandList->DrawIndexedInstanced(UINT(modelData.indices.size()), 1, 0, 0, 0);
 			//UINT(modelData.indices.size())
 
 			//球
