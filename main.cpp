@@ -1592,11 +1592,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	//裏面(時計回り)を表示しない
-	//rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
 	//三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 	//カリングしない(裏面も表示させる)
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
+	//rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 
 
 	////=========ShaderをCompileする=========////
@@ -1630,8 +1630,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	//Depthの機能を有効化する
 	depthStencilDesc.DepthEnable = true;
 	//書き込みします
-	//depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	//depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 	//比較関数はLessEqual。つまり、近ければ描画される
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
@@ -1670,11 +1670,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// モデルの読み込み
 	//ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
 
-	ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
-	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	//ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	//Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
 
-	/*ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
-	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");*/
+	ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
+	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");
 
 	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
@@ -1685,8 +1685,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	modelData.vertices.push_back({ .position = {-1.0f, -1.0f, 0.0f, 1.0f}, .texcoord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f} });*/
 
 	//modelData.material.textureFilePath = "./Resources/uvChecker.png";
-	modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";
-	//modelData.material.textureFilePath = "./Resources/human/white.png";
+	//modelData.material.textureFilePath = "./Resources/AnimatedCube/AnimatedCube_BaseColor.png";
+	modelData.material.textureFilePath = "./Resources/human/white.png";
 	//modelData.material.textureFilePath = "./Resources/circle.png";
 
 	//modelData.rootNode = ReadNode(scene->mRootNode);
@@ -2504,12 +2504,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			AppAnimation(skeleton, animation, animationTime);
 			Update(skeleton);
 
-			NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
+			/*NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
 			Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
 			Quaternion rotate = CalculateValue(rootNodeAnimation.rotate.keyframes, animationTime);
 			Vector3 scale = CalculateValue(rootNodeAnimation.scale.keyframes, animationTime);
 
-			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);
+			Matrix4x4 localMatrix = MakeAffineMatrix(scale, rotate, translate);*/
 
 
 
