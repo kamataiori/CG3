@@ -1670,8 +1670,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// モデルの読み込み
 	//ModelData modelData = LoadModelFile("Resources", "uvChecker.gltf");
 
-	//ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
-	//Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	/*ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
+	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");*/
 
 	ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
 	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");
