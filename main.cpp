@@ -31,6 +31,8 @@
 #include "externals/imgui/imgui_impl_win32.h"
 #include <map>
 #include <iostream>
+#include <span>
+#include <array>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #pragma comment(lib,"d3d12.lib")
@@ -175,13 +177,34 @@ struct MaterialData {
 	std::string textureFilePath;
 };
 
+//------------------------//
+// CG4_Animationここから
+//------------------------//
+
+// VertexWeightData構造体
+struct VertexWeightData {
+	float weight;
+	uint32_t vertexIndex;
+};
+
+// JointWeightData構造体
+struct JointWeightData {
+	Matrix4x4 inverseBindPoseMatrix;
+	std::vector<VertexWeightData> vertexWeights;
+};
+
 //ModelData構造体
 struct ModelData {
+	std::map<std::string, JointWeightData> skinClusterData;
 	std::vector<VertexData>vertices;
 	std::vector<uint32_t> indices;
 	MaterialData material;
 	Node rootNode;
 };
+
+//------------------------//
+// CG4_Animationここまで
+//------------------------//
 
 //Particle構造体
 struct Particle {
@@ -448,8 +471,28 @@ struct Skeleton {
 	std::vector<Joint> joints;  // 所属しているジョイント
 };
 
+//インフルエンス
+const uint32_t kNumMaxInfluence = 4;
+struct VertexInfluence {
+	std::array<float, kNumMaxInfluence> weights;
+	std::array<int32_t, kNumMaxInfluence> jointIndices;
+};
 
+// マトリックスパレット
+struct WellForGPU {
+	Matrix4x4 skeletonSpaceMatrix; // 位置用
+	Matrix4x4 skeletonSpaceInverseTransposeMatrix; // 法線用
+};
 
+struct SkinCluster {
+	std::vector<Matrix4x4> inverseBindPoseMatrices;
+	Microsoft::WRL::ComPtr<ID3D12Resource> influenceResource;
+	D3D12_VERTEX_BUFFER_VIEW influenceBufferView;
+	std::span<VertexInfluence> mappedInfluence;
+	Microsoft::WRL::ComPtr<ID3D12Resource> paletteResource;
+	std::span<WellForGPU> mappedPalette;
+	std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> paletteSrvHandle;
+};
 
 
 
@@ -848,6 +891,32 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 				std::to_string(modelData.vertices[vertexIndex].texcoord.y) + ")\n");
 		}
 		Log("// Total vertices size after processing mesh: " + std::to_string(modelData.vertices.size()) + "\n");
+
+
+		// SkinCluster構築用のデータ取得を追加
+		for (uint32_t boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex)
+		{
+			// Jointごとの格納領域を作る
+			aiBone* bone = mesh->mBones[boneIndex];
+			std::string jointName = bone->mName.C_Str();
+			JointWeightData& jointWeightData = modelData.skinClusterData[jointName];
+
+			// InverseBindPoseMatrixの抽出
+			aiMatrix4x4 bindPoseMatrixAssimp = bone->mOffsetMatrix.Inverse(); // BindPoseMatrixに戻す
+			aiVector3D scale, translate;
+			aiQuaternion rotate;
+			bindPoseMatrixAssimp.Decompose(scale, rotate, translate); // 成分を抽出
+			Matrix4x4 bindPoseMatrix = MakeAffineMatrix({ scale.x,scale.y,scale.z }, { rotate.x,-rotate.y,-rotate.z,rotate.w }, { -translate.x,translate.y,translate.z });
+			// InverseBindMatrixにする
+			jointWeightData.inverseBindPoseMatrix = Inverse(bindPoseMatrix);
+
+			// Weight情報を取り出す
+			for (uint32_t weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex)
+			{
+				jointWeightData.vertexWeights.push_back({ bone->mWeights[weightIndex].mWeight, bone->mWeights[weightIndex].mVertexId });
+			}
+		}
+
 	}
 
 	// Materialを解析する
@@ -945,75 +1014,6 @@ Animation LoadAnimationFile(const std::string& directoryPath, const std::string&
 }
 
 
-//Animation LoadAnimationFile(const std::string& directoryPath, const std::string& fileName)
-//{
-//	Animation animation; // 今回作るアニメーション
-//
-//	Assimp::Importer importer;
-//	std::string filePath = directoryPath + "/" + fileName;
-//	const aiScene* scene = importer.ReadFile(filePath.c_str(), aiProcess_Triangulate | aiProcess_GenSmoothNormals);
-//
-//	// ファイルの読み込みが成功したか確認
-//	if (!scene) {
-//		std::cerr << "Failed to load animation file: " << filePath << "\nError: " << importer.GetErrorString() << std::endl;
-//		return animation; // エラー時に空のアニメーションを返す
-//	}
-//
-//	// アニメーションが含まれているか確認
-//	if (scene->mNumAnimations == 0) {
-//		std::cerr << "No animations found in the file: " << filePath << std::endl;
-//		return animation; // アニメーションがない場合も空のアニメーションを返す
-//	}
-//
-//	aiAnimation* animationAssimp = scene->mAnimations[0]; // 最初のアニメーションだけ採用
-//
-//	// 時間の単位を秒に変換
-//	animation.duration = float(animationAssimp->mDuration / animationAssimp->mTicksPerSecond);
-//
-//	// assimpでは個々のNodeのAnimationをchannelと呼んでいるのでchannelを回してNodeAnimationの情報をとってくる
-//	for (uint32_t channelIndex = 0; channelIndex < animationAssimp->mNumChannels; ++channelIndex) {
-//		aiNodeAnim* nodeAnimationAssimp = animationAssimp->mChannels[channelIndex];
-//		NodeAnimation& nodeAnimation = animation.NodeAnimations[nodeAnimationAssimp->mNodeName.C_Str()];
-//
-//		// 各PositionKeysをKeyframeVector3としてNodeAnimationに追加
-//		if (nodeAnimationAssimp->mNumPositionKeys > 0) {  // PositionKeysが存在するかチェック
-//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumPositionKeys; ++keyIndex) {
-//				aiVectorKey& keyAssimp = nodeAnimationAssimp->mPositionKeys[keyIndex];
-//				KeyframeVector3 keyframe;
-//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond); // 秒に変換
-//				keyframe.value = { -keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z }; // 右手→左手
-//				nodeAnimation.translate.keyframes.push_back(keyframe);
-//			}
-//		}
-//
-//		// 各RotationKeysをKeyframeQuaternionとしてNodeAnimationに追加
-//		if (nodeAnimationAssimp->mNumRotationKeys > 0) {  // RotationKeysが存在するかチェック
-//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumRotationKeys; ++keyIndex) {
-//				aiQuatKey& keyAssimp = nodeAnimationAssimp->mRotationKeys[keyIndex];
-//				KeyframeQuaternion keyframe;
-//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
-//				keyframe.value = { keyAssimp.mValue.x, -keyAssimp.mValue.y, -keyAssimp.mValue.z, keyAssimp.mValue.w }; // 右手→左手
-//				nodeAnimation.rotate.keyframes.push_back(keyframe);
-//			}
-//		}
-//
-//		// 各ScalingKeysをKeyframeVector3としてNodeAnimationに追加
-//		if (nodeAnimationAssimp->mNumScalingKeys > 0) {  // ScalingKeysが存在するかチェック
-//			for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumScalingKeys; ++keyIndex) {
-//				aiVectorKey& keyAssimp = nodeAnimationAssimp->mScalingKeys[keyIndex];
-//				KeyframeVector3 keyframe;
-//				keyframe.time = float(keyAssimp.mTime / animationAssimp->mTicksPerSecond);
-//				keyframe.value = { keyAssimp.mValue.x, keyAssimp.mValue.y, keyAssimp.mValue.z };
-//				nodeAnimation.scale.keyframes.push_back(keyframe);
-//			}
-//		}
-//	}
-//
-//	// 解析完了
-//	return animation;
-//}
-
-
 //-----NodeからJointを作る-----//
 
 int32_t CreateJoint(const Node& node, const std::optional<int32_t>& parent, std::vector<Joint>& joints)
@@ -1093,6 +1093,37 @@ void AppAnimation(Skeleton& skeleton, const Animation& animation, float animatio
 		}
 	}
 }
+
+
+//--------SkinClusterの生成--------//
+
+SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device, const Skeleton& skeleton, const ModelData& modelDate, const Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize)
+{
+	SkinCluster skinCluster;
+
+	// palette用のResourceを確保
+	skinCluster.paletteResource = CreateBufferResource(device, sizeof(WellForGPU) * skeleton.joints.size());
+	WellForGPU* mappedPalette = nullptr;
+	skinCluster.influenceResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedPalette));
+	skinCluster.mappedPalette = { mappedPalette,skeleton.joints.size() }; // spanを使ってアクセスするようにする
+	skinCluster.paletteSrvHandle.first = GetCPUDescriptorHandle(descriptorHeap, descriptorSize,/*空きインデックス*/);
+	skinCluster.paletteSrvHandle.second = GetCPUDescriptorHandle(descriptorHeap, descriptorSize,/*空きインデックス*/);
+
+	// palette用のSRVを作成
+
+	// influence用のResourceを確保
+
+	// influence用のVBVを作成
+
+	// InverseBindPoseMatrixの保存領域を作成
+
+	// ModelDataのSkinCluster情報を解析してInfluenceの中身を埋める
+
+
+	return skinCluster;
+}
+
+
 
 
 //------------------------//
