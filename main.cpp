@@ -1076,6 +1076,16 @@ void Update(Skeleton& skeleton)
 	}
 }
 
+void Update(SkinCluster& skinCluster, const Skeleton& skeleton)
+{
+	for (size_t jointIndex = 0; jointIndex < skeleton.joints.size(); ++jointIndex)
+	{
+		assert(jointIndex < skinCluster.inverseBindPoseMatrices.size());
+		skinCluster.mappedPalette[jointIndex].skeletonSpaceMatrix = skinCluster.inverseBindPoseMatrices[jointIndex] * skeleton.joints[jointIndex].skeletonSpaceMatrix;
+		skinCluster.mappedPalette[jointIndex].skeletonSpaceInverseTransposeMatrix = transpose(Inverse(skinCluster.mappedPalette[jointIndex].skeletonSpaceMatrix));
+	}
+}
+
 
 //-----Animationを適用する-----//
 
@@ -1097,7 +1107,7 @@ void AppAnimation(Skeleton& skeleton, const Animation& animation, float animatio
 
 //--------SkinClusterの生成--------//
 
-SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device, const Skeleton& skeleton, const ModelData& modelDate, const Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize)
+SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device, const Skeleton& skeleton, const ModelData& modelData, const Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize)
 {
 	SkinCluster skinCluster;
 
@@ -1106,19 +1116,63 @@ SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device
 	WellForGPU* mappedPalette = nullptr;
 	skinCluster.influenceResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedPalette));
 	skinCluster.mappedPalette = { mappedPalette,skeleton.joints.size() }; // spanを使ってアクセスするようにする
-	skinCluster.paletteSrvHandle.first = GetCPUDescriptorHandle(descriptorHeap, descriptorSize,/*空きインデックス*/);
-	skinCluster.paletteSrvHandle.second = GetCPUDescriptorHandle(descriptorHeap, descriptorSize,/*空きインデックス*/);
+	skinCluster.paletteSrvHandle.first = GetCPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
+	skinCluster.paletteSrvHandle.second = GetGPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
 
-	// palette用のSRVを作成
+	// palette用のSRVを作成。StructuredBufferでアクセスできるようにする
+	D3D12_SHADER_RESOURCE_VIEW_DESC paletteSrvDesc{};
+	paletteSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+	paletteSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	paletteSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	paletteSrvDesc.Buffer.FirstElement = 0;
+	paletteSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	paletteSrvDesc.Buffer.NumElements = UINT(skeleton.joints.size());
+	paletteSrvDesc.Buffer.StructureByteStride = sizeof(WellForGPU);
+	device->CreateShaderResourceView(skinCluster.paletteResource.Get(), &paletteSrvDesc, skinCluster.paletteSrvHandle.first);
 
-	// influence用のResourceを確保
+	// influence用のResourceを確保。頂点ごとにinfluence情報を追加できるようにする
+	skinCluster.influenceResource = CreateBufferResource(device, sizeof(VertexInfluence) * modelData.vertices.size());
+	VertexInfluence* mappedInfluence = nullptr;
+	skinCluster.influenceResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedInfluence));
+	std::memset(mappedInfluence, 0, sizeof(VertexInfluence) * modelData.vertices.size());  // θ埋め。weightを0にしておく
+	skinCluster.mappedInfluence = { mappedInfluence,modelData.vertices.size() };
 
 	// influence用のVBVを作成
+	skinCluster.influenceBufferView.BufferLocation = skinCluster.influenceResource->GetGPUVirtualAddress();
+	skinCluster.influenceBufferView.SizeInBytes = UINT(sizeof(VertexInfluence) * modelData.vertices.size());
+	skinCluster.influenceBufferView.StrideInBytes = sizeof(VertexInfluence);
 
-	// InverseBindPoseMatrixの保存領域を作成
+	// InverseBindPoseMatrixの保存領域を作成して、単位行列で埋める
+	skinCluster.inverseBindPoseMatrices.resize(skeleton.joints.size());
+	std::generate(skinCluster.inverseBindPoseMatrices.begin(), skinCluster.inverseBindPoseMatrices.end(), MakeIdentity4x4);
 
 	// ModelDataのSkinCluster情報を解析してInfluenceの中身を埋める
-
+	for (const auto& jointWeight : modelData.skinClusterData)
+	{
+		// ModelのSkinClusterの情報を解析
+		auto it = skeleton.jointMap.find(jointWeight.first);  // JointWeight.firstはjoint名なので、skeltonに対象となるjointが含まれているか判断
+		if (it == skeleton.jointMap.end())
+		{
+			// そんな名前のjointは存在しないため、次に回す
+			continue;
+		}
+		// (*it).secondにJointのIndexが入っているので、該当IndexのInverseBindPosseMatrixを代入
+		skinCluster.inverseBindPoseMatrices[(*it).second] = jointWeight.second.inverseBindPoseMatrix;
+		for (const auto& VertexWeightData : jointWeight.second.vertexWeights)
+		{
+			auto& currentInfluence = skinCluster.mappedInfluence[VertexWeightData.vertexIndex];  // 該当のVertexIndexのInfluence情報を参照しておく
+			for (uint32_t index = 0; index < kNumMaxInfluence; ++index)
+			{
+				if (currentInfluence.weights[index] == 0.0f)
+				{
+					// Weight==0が空いている状態なので、その場所にWeightとJointのIndexを代入
+					currentInfluence.weights[index] = VertexWeightData.weight;
+					currentInfluence.jointIndices[index] = (*it).second;
+					break;
+				}
+			}
+		}
+	}
 
 	return skinCluster;
 }
@@ -1695,6 +1749,260 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
 		IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
+
+
+	//------------------------//
+	// CG4_Animationここから
+	//------------------------//
+
+
+	////=========DescriptorRange=========////
+
+	D3D12_DESCRIPTOR_RANGE animationDescriptorRange[1] = {};
+	animationDescriptorRange[0].BaseShaderRegister = 0;  //0から始まる
+	animationDescriptorRange[0].NumDescriptors = 1;  //数は1
+	animationDescriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;  //SRVを使う
+	animationDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;  //Offsetを自動計算
+
+	/*D3D12_DESCRIPTOR_RANGE descriptorRangeForInstancing[1] = {};
+	descriptorRangeForInstancing[0].BaseShaderRegister = 0;
+	descriptorRangeForInstancing[0].NumDescriptors = 1;
+	descriptorRangeForInstancing[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRangeForInstancing[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;*/
+
+
+
+	////=========RootSignatureを生成する=========////
+
+	//RootSignature作成
+	D3D12_ROOT_SIGNATURE_DESC animationDescriptionRootSignature{};
+	animationDescriptionRootSignature.Flags =
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+	//RootSignature作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
+	D3D12_ROOT_PARAMETER animationRootParameters[7] = {};
+	animationRootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
+	animationRootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;    //PixelShaderで使う
+	animationRootParameters[0].Descriptor.ShaderRegister = 0;    //レジスタ番号0とバインド
+
+	animationRootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
+	animationRootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;    //VertexShaderで使う
+	animationRootParameters[1].Descriptor.ShaderRegister = 0;    //レジスタ番号0を使う
+
+	/*rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeForInstancing;
+	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing);*/
+
+	animationRootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;  //DescriptorTableを使う
+	animationRootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	animationRootParameters[2].DescriptorTable.pDescriptorRanges = animationDescriptorRange;
+	animationRootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(animationDescriptorRange);
+	////=========平行光源をShaderで使う=========////
+	animationRootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	animationRootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	animationRootParameters[3].Descriptor.ShaderRegister = 1;  //レジスタ番号1を使う
+
+	////=========光源のカメラの位置をShaderで使う=========////
+	animationRootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	animationRootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	animationRootParameters[4].Descriptor.ShaderRegister = 2;  //レジスタ番号2を使う
+
+	////========ポイントライトをShaderで使う========////
+	animationRootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	animationRootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	animationRootParameters[5].Descriptor.ShaderRegister = 3;  //レジスタ番号3を使う
+
+	////========スポットライトをShaderで使う========////
+	animationRootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
+	animationRootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	animationRootParameters[6].Descriptor.ShaderRegister = 4;  //レジスタ番号4を使う
+
+	animationDescriptionRootSignature.pParameters = animationRootParameters;    //ルートパラメータ配列へのポインタ
+	animationDescriptionRootSignature.NumParameters = _countof(animationRootParameters);    //配列の長さ
+
+
+
+
+	////=========Samplerの設定=========////
+
+	D3D12_STATIC_SAMPLER_DESC animationStaticSamplers[1] = {};
+	animationStaticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;  //バイリニアフィルタ
+	animationStaticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;  //0～1の範囲外をリピート
+	animationStaticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	animationStaticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	animationStaticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;  //比較しない
+	animationStaticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;  //ありったけのMipmapを使う
+	animationStaticSamplers[0].ShaderRegister = 0;  //レジスタ番号0を使う
+	animationStaticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
+	animationDescriptionRootSignature.pStaticSamplers = animationStaticSamplers;
+	animationDescriptionRootSignature.NumStaticSamplers = _countof(animationStaticSamplers);
+
+
+	//シリアライズしてバイナリにする
+	Microsoft::WRL::ComPtr<ID3DBlob> animationSignatureBlob = nullptr;
+	Microsoft::WRL::ComPtr<ID3DBlob> animationErrorBlob = nullptr;
+	hr = D3D12SerializeRootSignature(&animationDescriptionRootSignature,
+		D3D_ROOT_SIGNATURE_VERSION_1, &animationSignatureBlob, &animationErrorBlob);
+	if (FAILED(hr)) {
+		Log(reinterpret_cast<char*>(animationErrorBlob->GetBufferPointer()));
+		assert(false);
+	}
+	//バイナリを元に生成
+	Microsoft::WRL::ComPtr<ID3D12RootSignature> animationRootSignature = nullptr;
+	hr = device->CreateRootSignature(0, animationSignatureBlob->GetBufferPointer(),
+		animationSignatureBlob->GetBufferSize(), IID_PPV_ARGS(&animationRootSignature));
+	assert(SUCCEEDED(hr));
+
+	////=========InputLayoutの設定を行う=========////
+
+	//D3D12_INPUT_ELEMENT_DESC animationInputElementDescs[3] = {};
+	std::array<D3D12_INPUT_ELEMENT_DESC, 5> animationIputElementDescs{};
+	animationIputElementDescs[0].SemanticName = "POSITION";
+	animationIputElementDescs[0].SemanticIndex = 0;
+	animationIputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	animationIputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	animationIputElementDescs[1].SemanticName = "TEXCOORD";
+	animationIputElementDescs[1].SemanticIndex = 0;
+	animationIputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
+	animationIputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	animationIputElementDescs[2].SemanticName = "NORMAL";
+	animationIputElementDescs[2].SemanticIndex = 0;
+	animationIputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
+	animationIputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	animationIputElementDescs[3].SemanticName = "WEIGHT";
+	animationIputElementDescs[3].SemanticIndex = 0;
+	animationIputElementDescs[3].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	animationIputElementDescs[3].InputSlot = 1;
+	animationIputElementDescs[3].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	animationIputElementDescs[4].SemanticName = "INDEX";
+	animationIputElementDescs[4].SemanticIndex = 0;
+	animationIputElementDescs[4].Format = DXGI_FORMAT_R32G32B32A32_SINT;
+	animationIputElementDescs[4].InputSlot = 1;
+	animationIputElementDescs[4].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	D3D12_INPUT_LAYOUT_DESC animationInputLayoutDesc{};
+	animationInputLayoutDesc.pInputElementDescs = animationIputElementDescs.data();
+	animationInputLayoutDesc.NumElements = animationIputElementDescs.size();
+
+	////=========BlendStateの設定を行う=========////
+
+	//BlendStateの設定
+	D3D12_BLEND_DESC animationBlendDesc{};
+	//すべての色要素を書き込む
+	animationBlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	//blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	//--------ノーマルブレンド--------//
+	animationBlendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	animationBlendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	animationBlendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	//--------加算合成--------//
+	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;*/
+	//--------減算合成--------//
+	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;*/
+	//--------乗算合成--------//
+	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ZERO;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_SRC_COLOR;*/
+	//--------スクリーン合成--------//
+	/*blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;*/
+
+	//α値のブレンド設定で基本的には使わない
+	animationBlendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	animationBlendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	animationBlendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+
+	////=========RasterizerStateの設定を行う=========////
+
+	//RasterizerStateの設定
+	D3D12_RASTERIZER_DESC animationRasterizerDesc{};
+	//裏面(時計回り)を表示しない
+	animationRasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	//三角形の中を塗りつぶす
+	animationRasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
+	//カリングしない(裏面も表示させる)
+	//animationRasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
+
+
+	////=========ShaderをCompileする=========////
+
+	//Shaderをコンパイルする
+
+	//-------基本的-------//
+	Microsoft::WRL::ComPtr<IDxcBlob> animationVertexShaderBlob = CompileShader(L"SkinningObject3d.VS.hlsl",
+		L"vs_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(vertexShaderBlob != nullptr);
+
+	Microsoft::WRL::ComPtr<IDxcBlob> animationPixelShaderBlob = CompileShader(L"Object3d.PS.hlsl",
+		L"ps_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(animationPixelShaderBlob != nullptr);
+
+	//-------パーティクル時-------//
+	/*Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"Particle.VS.hlsli",
+		L"vs_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(vertexShaderBlob != nullptr);
+
+	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"Particle.PS.hlsli",
+		L"ps_6_0", dxcUtils, dxcCompiler, includeHandler);
+	assert(pixelShaderBlob != nullptr);*/
+
+
+
+	////=========DepthStencilStateの設定を行う=========////
+
+	//DepthStencilStateの設定
+	D3D12_DEPTH_STENCIL_DESC animationDepthStencilDesc{};
+	//Depthの機能を有効化する
+	animationDepthStencilDesc.DepthEnable = true;
+	//書き込みします
+	animationDepthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	//depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	//比較関数はLessEqual。つまり、近ければ描画される
+	animationDepthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+
+	////=========PSOを生成する=========////
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC animationGraphicsPipelineStateDesc{};
+	animationGraphicsPipelineStateDesc.pRootSignature = animationRootSignature.Get();    //RootSignature
+	animationGraphicsPipelineStateDesc.InputLayout = animationInputLayoutDesc;    //InputLayout
+	animationGraphicsPipelineStateDesc.VS = { animationVertexShaderBlob->GetBufferPointer(),
+	vertexShaderBlob->GetBufferSize() };    //VertexShader
+	animationGraphicsPipelineStateDesc.PS = { animationPixelShaderBlob->GetBufferPointer(),
+	animationPixelShaderBlob->GetBufferSize() };    //PixelShader
+	animationGraphicsPipelineStateDesc.BlendState = animationBlendDesc;    //BlendState
+	animationGraphicsPipelineStateDesc.RasterizerState = animationRasterizerDesc;    //RasterizerState
+	//書き込むRTVの情報
+	animationGraphicsPipelineStateDesc.NumRenderTargets = 1;
+	animationGraphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	//利用するトポロジ(形状)のタイプ。三角形
+	animationGraphicsPipelineStateDesc.PrimitiveTopologyType =
+		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	//どのように画面に色を打ち込むかの設定(気にしなくて良い)
+	animationGraphicsPipelineStateDesc.SampleDesc.Count = 1;
+	animationGraphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+	//DepthStencilの設定
+	animationGraphicsPipelineStateDesc.DepthStencilState = animationDepthStencilDesc;
+	animationGraphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	//実際に生成
+	Microsoft::WRL::ComPtr<ID3D12PipelineState>animationGraphicsPipelineState = nullptr;
+	hr = device->CreateGraphicsPipelineState(&animationGraphicsPipelineStateDesc,
+		IID_PPV_ARGS(&animationGraphicsPipelineState));
+	assert(SUCCEEDED(hr));
+
+
+
+
+	//------------------------//
+	// CG4_Animationここまで
+	//------------------------//
+
+
 
 
 
@@ -2385,6 +2693,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//float animationTime = 0.0f;
 	Skeleton skeleton = CretaeSkeleton(modelData.rootNode);
+	SkinCluster skinCluster{};
 
 	//------------------------//
 	// CG4_Animationここまで
@@ -2532,8 +2841,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			animationTime += 1.0f / 60.0f;  // 時間を進める
 			animationTime = std::fmod(animationTime, animation.duration);  // 繰り返し再生
-			AppAnimation(skeleton, animation, animationTime);
-			Update(skeleton);
+			AppAnimation(skeleton, animation, animationTime);  // 骨ごとの状態を決める
+			Update(skeleton);  // 現在の骨ごとのLocal情報を基に、SkeltonSpaceの情報を更新する
+			Update(skinCluster, skeleton);  // SkeltonSpaceの情報を基に、SkinClusterのMatrixPaletteを更新する
 
 			/*NodeAnimation& rootNodeAnimation = animation.NodeAnimations[modelData.rootNode.name];
 			Vector3 translate = CalculateValue(rootNodeAnimation.translate.keyframes, animationTime);
@@ -2723,8 +3033,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//RootSignatureを設定。PSOに設定しているけど別途設定が必要
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
 			commandList->SetPipelineState(graphicsPipelineState.Get());    //PSOを設定
+			commandList->SetPipelineState(animationGraphicsPipelineState.Get());
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
+			D3D12_VERTEX_BUFFER_VIEW vbvs[2] = {
+				vertexBufferView,
+				skinCluster.influenceBufferView
+			};
+			commandList->IASetVertexBuffers(0, 2, vbvs);
 			commandList->IASetIndexBuffer(&startBufferViewSprite);
+
+
 			//------------------------//
 			// CG4_Animationここから
 			//------------------------//

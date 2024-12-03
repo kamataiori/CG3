@@ -55,6 +55,7 @@
   <ItemGroup>
     <FxCompile Include="Object3d.PS.hlsl" />
     <FxCompile Include="Object3d.VS.hlsl" />
+    <FxCompile Include="SkinningObject3d.VS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h">
@@ -114,5 +115,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Object3d.hlsli" />
+    <None Include="SkinningObject3d.hlsli" />
   </ItemGroup>
 </Project>
