@@ -1780,7 +1780,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	//RootSignature作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-	D3D12_ROOT_PARAMETER animationRootParameters[7] = {};
+	D3D12_ROOT_PARAMETER animationRootParameters[8] = {};
 	animationRootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;    //CBVを使う
 	animationRootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;    //PixelShaderで使う
 	animationRootParameters[0].Descriptor.ShaderRegister = 0;    //レジスタ番号0とバインド
@@ -1817,6 +1817,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	animationRootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;  //CBVを使う
 	animationRootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  //PixelShaderで使う
 	animationRootParameters[6].Descriptor.ShaderRegister = 4;  //レジスタ番号4を使う
+
+	////========StructuredBufferをShaderで使う========////
+	animationRootParameters[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;  //DescriptorTableを使う
+	animationRootParameters[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	animationRootParameters[7].DescriptorTable.pDescriptorRanges = animationDescriptorRange;
+	animationRootParameters[7].DescriptorTable.NumDescriptorRanges = _countof(animationDescriptorRange);
 
 	animationDescriptionRootSignature.pParameters = animationRootParameters;    //ルートパラメータ配列へのポインタ
 	animationDescriptionRootSignature.NumParameters = _countof(animationRootParameters);    //配列の長さ
@@ -1856,33 +1862,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	////=========InputLayoutの設定を行う=========////
 
-	//D3D12_INPUT_ELEMENT_DESC animationInputElementDescs[3] = {};
-	std::array<D3D12_INPUT_ELEMENT_DESC, 5> animationIputElementDescs{};
-	animationIputElementDescs[0].SemanticName = "POSITION";
-	animationIputElementDescs[0].SemanticIndex = 0;
-	animationIputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	animationIputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	animationIputElementDescs[1].SemanticName = "TEXCOORD";
-	animationIputElementDescs[1].SemanticIndex = 0;
-	animationIputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	animationIputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	animationIputElementDescs[2].SemanticName = "NORMAL";
-	animationIputElementDescs[2].SemanticIndex = 0;
-	animationIputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	animationIputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	animationIputElementDescs[3].SemanticName = "WEIGHT";
-	animationIputElementDescs[3].SemanticIndex = 0;
-	animationIputElementDescs[3].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	animationIputElementDescs[3].InputSlot = 1;
-	animationIputElementDescs[3].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	animationIputElementDescs[4].SemanticName = "INDEX";
-	animationIputElementDescs[4].SemanticIndex = 0;
-	animationIputElementDescs[4].Format = DXGI_FORMAT_R32G32B32A32_SINT;
-	animationIputElementDescs[4].InputSlot = 1;
-	animationIputElementDescs[4].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	//D3D12_INPUT_ELEMENT_DESC animationInputElementDescs[5] = {};
+	std::array<D3D12_INPUT_ELEMENT_DESC, 5> animationInputElementDescs{};
+	animationInputElementDescs[0].SemanticName = "POSITION";
+	animationInputElementDescs[0].SemanticIndex = 0;
+	animationInputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	animationInputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+
+	animationInputElementDescs[1].SemanticName = "TEXCOORD";
+	animationInputElementDescs[1].SemanticIndex = 0;
+	animationInputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
+	animationInputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+
+	animationInputElementDescs[2].SemanticName = "NORMAL";
+	animationInputElementDescs[2].SemanticIndex = 0;
+	animationInputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
+	animationInputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+
+	animationInputElementDescs[3].SemanticName = "WEIGHT";
+	animationInputElementDescs[3].SemanticIndex = 0;
+	animationInputElementDescs[3].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	animationInputElementDescs[3].InputSlot = 1;
+	animationInputElementDescs[3].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+
+	animationInputElementDescs[4].SemanticName = "INDEX";
+	animationInputElementDescs[4].SemanticIndex = 0;
+	animationInputElementDescs[4].Format = DXGI_FORMAT_R32G32B32A32_SINT;
+	animationInputElementDescs[4].InputSlot = 1;
+	animationInputElementDescs[4].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
 	D3D12_INPUT_LAYOUT_DESC animationInputLayoutDesc{};
-	animationInputLayoutDesc.pInputElementDescs = animationIputElementDescs.data();
-	animationInputLayoutDesc.NumElements = animationIputElementDescs.size();
+	animationInputLayoutDesc.pInputElementDescs = animationInputElementDescs.data();
+	animationInputLayoutDesc.NumElements = animationInputElementDescs.size();
 
 	////=========BlendStateの設定を行う=========////
 
