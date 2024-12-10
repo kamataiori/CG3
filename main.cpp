@@ -3042,6 +3042,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->RSSetScissorRects(1, &scissorRect);    //Scirssorを設定
 			//RootSignatureを設定。PSOに設定しているけど別途設定が必要
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
+			commandList->SetComputeRootSignature(animationRootSignature.Get());
 			commandList->SetPipelineState(graphicsPipelineState.Get());    //PSOを設定
 			commandList->SetPipelineState(animationGraphicsPipelineState.Get());
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
