@@ -2703,7 +2703,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//float animationTime = 0.0f;
 	Skeleton skeleton = CretaeSkeleton(modelData.rootNode);
-	SkinCluster skinCluster{};
+	SkinCluster skinCluster = {};
 
 	//------------------------//
 	// CG4_Animationここまで
