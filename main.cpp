@@ -946,7 +946,7 @@ ModelData LoadModelFile(const std::string& directoryPath, const std::string& fil
 
 Animation LoadAnimationFile(const std::string& directoryPath, const std::string& fileName)
 {
-	Animation animation; // 今回作るアニメーション
+	Animation animation_; // 今回作るアニメーション
 
 	Assimp::Importer importer;
 	std::string filePath = directoryPath + "/" + fileName;
@@ -956,7 +956,7 @@ Animation LoadAnimationFile(const std::string& directoryPath, const std::string&
 	if (!scene) {
 		std::cerr << "Error loading animation file: " << importer.GetErrorString() << std::endl;
 		assert(scene && "Failed to load animation file.");
-		return animation; // もしくは適切なエラー処理を行う
+		return animation_; // もしくは適切なエラー処理を行う
 	}
 
 	// アニメーションが含まれているか確認
@@ -965,12 +965,12 @@ Animation LoadAnimationFile(const std::string& directoryPath, const std::string&
 	aiAnimation* animationAssimp = scene->mAnimations[0]; // 最初のアニメーションだけ採用。もちろん複数対応するに越したことはない
 
 	// 時間の単位を秒に変換
-	animation.duration = float(animationAssimp->mDuration / animationAssimp->mTicksPerSecond);
+	animation_.duration = float(animationAssimp->mDuration / animationAssimp->mTicksPerSecond);
 
 	// assimpでは個々のNodeのAnimationをchannelと呼んでいるのでchannelを回してNodeAnimationの情報をとってくる
 	for (uint32_t channelIndex = 0; channelIndex < animationAssimp->mNumChannels; ++channelIndex) {
 		aiNodeAnim* nodeAnimationAssimp = animationAssimp->mChannels[channelIndex];
-		NodeAnimation& nodeAnimation = animation.NodeAnimations[nodeAnimationAssimp->mNodeName.C_Str()];
+		NodeAnimation& nodeAnimation = animation_.NodeAnimations[nodeAnimationAssimp->mNodeName.C_Str()];
 
 		// 各PositionKeysをKeyframeVector3としてNodeAnimationに追加
 		for (uint32_t keyIndex = 0; keyIndex < nodeAnimationAssimp->mNumPositionKeys; ++keyIndex) {
@@ -1010,7 +1010,7 @@ Animation LoadAnimationFile(const std::string& directoryPath, const std::string&
 	}
 
 	// 解析完了
-	return animation;
+	return animation_;
 }
 
 
@@ -1043,15 +1043,15 @@ int32_t CreateJoint(const Node& node, const std::optional<int32_t>& parent, std:
 
 Skeleton CretaeSkeleton(const Node& rootNode)
 {
-	Skeleton skeleton;
-	skeleton.root = CreateJoint(rootNode, {}, skeleton.joints);
+	Skeleton skeleton_;
+	skeleton_.root = CreateJoint(rootNode, {}, skeleton_.joints);
 
 	// 名前とindexのマッピングを行いアクセスしやすくする
-	for (const Joint& joint : skeleton.joints) {
-		skeleton.jointMap.emplace(joint.name, joint.index);
+	for (const Joint& joint : skeleton_.joints) {
+		skeleton_.jointMap.emplace(joint.name, joint.index);
 	}
 
-	return skeleton;
+	return skeleton_;
 
 }
 
@@ -1109,15 +1109,15 @@ void AppAnimation(Skeleton& skeleton, const Animation& animation, float animatio
 
 SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device, const Skeleton& skeleton, const ModelData& modelData, const Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize)
 {
-	SkinCluster skinCluster;
+	SkinCluster skinCluster_;
 
 	// palette用のResourceを確保
-	skinCluster.paletteResource = CreateBufferResource(device, sizeof(WellForGPU) * skeleton.joints.size());
+	skinCluster_.paletteResource = CreateBufferResource(device, sizeof(WellForGPU) * skeleton.joints.size());
 	WellForGPU* mappedPalette = nullptr;
-	skinCluster.paletteResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedPalette));
-	skinCluster.mappedPalette = { mappedPalette,skeleton.joints.size() }; // spanを使ってアクセスするようにする
-	skinCluster.paletteSrvHandle.first = GetCPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
-	skinCluster.paletteSrvHandle.second = GetGPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
+	skinCluster_.paletteResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedPalette));
+	skinCluster_.mappedPalette = { mappedPalette,skeleton.joints.size() }; // spanを使ってアクセスするようにする
+	skinCluster_.paletteSrvHandle.first = GetCPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
+	skinCluster_.paletteSrvHandle.second = GetGPUDescriptorHandle(descriptorHeap.Get(), descriptorSize,30);
 
 	// palette用のSRVを作成。StructuredBufferでアクセスできるようにする
 	D3D12_SHADER_RESOURCE_VIEW_DESC paletteSrvDesc{};
@@ -1128,23 +1128,23 @@ SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device
 	paletteSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 	paletteSrvDesc.Buffer.NumElements = UINT(skeleton.joints.size());
 	paletteSrvDesc.Buffer.StructureByteStride = sizeof(WellForGPU);
-	device->CreateShaderResourceView(skinCluster.paletteResource.Get(), &paletteSrvDesc, skinCluster.paletteSrvHandle.first);
+	device->CreateShaderResourceView(skinCluster_.paletteResource.Get(), &paletteSrvDesc, skinCluster_.paletteSrvHandle.first);
 
 	// influence用のResourceを確保。頂点ごとにinfluence情報を追加できるようにする
-	skinCluster.influenceResource = CreateBufferResource(device, sizeof(VertexInfluence) * modelData.vertices.size());
+	skinCluster_.influenceResource = CreateBufferResource(device, sizeof(VertexInfluence) * modelData.vertices.size());
 	VertexInfluence* mappedInfluence = nullptr;
-	skinCluster.influenceResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedInfluence));
+	skinCluster_.influenceResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedInfluence));
 	std::memset(mappedInfluence, 0, sizeof(VertexInfluence) * modelData.vertices.size());  // θ埋め。weightを0にしておく
-	skinCluster.mappedInfluence = { mappedInfluence,modelData.vertices.size() };
+	skinCluster_.mappedInfluence = { mappedInfluence,modelData.vertices.size() };
 
 	// influence用のVBVを作成
-	skinCluster.influenceBufferView.BufferLocation = skinCluster.influenceResource->GetGPUVirtualAddress();
-	skinCluster.influenceBufferView.SizeInBytes = UINT(sizeof(VertexInfluence) * modelData.vertices.size());
-	skinCluster.influenceBufferView.StrideInBytes = sizeof(VertexInfluence);
+	skinCluster_.influenceBufferView.BufferLocation = skinCluster_.influenceResource->GetGPUVirtualAddress();
+	skinCluster_.influenceBufferView.SizeInBytes = UINT(sizeof(VertexInfluence) * modelData.vertices.size());
+	skinCluster_.influenceBufferView.StrideInBytes = sizeof(VertexInfluence);
 
 	// InverseBindPoseMatrixの保存領域を作成して、単位行列で埋める
-	skinCluster.inverseBindPoseMatrices.resize(skeleton.joints.size());
-	std::generate(skinCluster.inverseBindPoseMatrices.begin(), skinCluster.inverseBindPoseMatrices.end(), MakeIdentity4x4);
+	skinCluster_.inverseBindPoseMatrices.resize(skeleton.joints.size());
+	std::generate(skinCluster_.inverseBindPoseMatrices.begin(), skinCluster_.inverseBindPoseMatrices.end(), MakeIdentity4x4);
 
 	// ModelDataのSkinCluster情報を解析してInfluenceの中身を埋める
 	for (const auto& jointWeight : modelData.skinClusterData)
@@ -1157,10 +1157,10 @@ SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device
 			continue;
 		}
 		// (*it).secondにJointのIndexが入っているので、該当IndexのInverseBindPosseMatrixを代入
-		skinCluster.inverseBindPoseMatrices[(*it).second] = jointWeight.second.inverseBindPoseMatrix;
+		skinCluster_.inverseBindPoseMatrices[(*it).second] = jointWeight.second.inverseBindPoseMatrix;
 		for (const auto& VertexWeightData : jointWeight.second.vertexWeights)
 		{
-			auto& currentInfluence = skinCluster.mappedInfluence[VertexWeightData.vertexIndex];  // 該当のVertexIndexのInfluence情報を参照しておく
+			auto& currentInfluence = skinCluster_.mappedInfluence[VertexWeightData.vertexIndex];  // 該当のVertexIndexのInfluence情報を参照しておく
 			for (uint32_t index = 0; index < kNumMaxInfluence; ++index)
 			{
 				if (currentInfluence.weights[index] == 0.0f)
@@ -1174,7 +1174,7 @@ SkinCluster CreateSkinCluster(const Microsoft::WRL::ComPtr<ID3D12Device>& device
 		}
 	}
 
-	return skinCluster;
+	return skinCluster_;
 }
 
 
@@ -2022,11 +2022,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	/*ModelData modelData = LoadModelFile("./Resources/AnimatedCube", "AnimatedCube.gltf");
 	Animation animation = LoadAnimationFile("./Resources/AnimatedCube", "AnimatedCube.gltf");*/
 
-	/*ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
-	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");*/
+	ModelData modelData = LoadModelFile("./Resources/human", "sneakWalk.gltf");
+	Animation animation = LoadAnimationFile("./Resources/human", "sneakWalk.gltf");
 
-	ModelData modelData = LoadModelFile("./Resources/simpleSkin", "simpleSkin.gltf");
-	Animation animation = LoadAnimationFile("./Resources/simpleSkin", "simpleSkin.gltf");
+	/*ModelData modelData = LoadModelFile("./Resources/simpleSkin", "simpleSkin.gltf");
+	Animation animation = LoadAnimationFile("./Resources/simpleSkin", "simpleSkin.gltf");*/
 
 	/*ModelData modelData = LoadModelFile("Resources", "terrain.obj");*/
 	/*modelData.vertices.push_back({ .position = {1.0f, 1.0f, 0.0f, 1.0f}, .texcoord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f} });
@@ -3045,17 +3045,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->RSSetViewports(1, &viewport);    //Viewportを設定
 			commandList->RSSetScissorRects(1, &scissorRect);    //Scirssorを設定
 			//RootSignatureを設定。PSOに設定しているけど別途設定が必要
-			commandList->SetGraphicsRootSignature(rootSignature.Get());
+			//commandList->SetGraphicsRootSignature(rootSignature.Get());
 			commandList->SetGraphicsRootSignature(animationRootSignature.Get());
-			commandList->SetPipelineState(graphicsPipelineState.Get());    //PSOを設定
+			//commandList->SetPipelineState(graphicsPipelineState.Get());    //PSOを設定
 			commandList->SetPipelineState(animationGraphicsPipelineState.Get());
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
+			//commandList->IASetVertexBuffers(0, 1, &vertexBufferView);    //VBVを設定
 			D3D12_VERTEX_BUFFER_VIEW vbvs[2] = {
 				vertexBufferView,
 				skinCluster.influenceBufferView
 			};
 			commandList->IASetVertexBuffers(0, 2, vbvs);
-			commandList->IASetIndexBuffer(&startBufferViewSprite);
+			//commandList->IASetIndexBuffer(&startBufferViewSprite);
 
 
 			//------------------------//
@@ -3103,10 +3103,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			//UINT(modelData.indices.size())
 
 			//球
-			commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
+			/*commandList->IASetVertexBuffers(0, 1, &SphrevertexBufferView);
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU2);
 			commandList->SetGraphicsRootConstantBufferView(1, SphrewvpResource->GetGPUVirtualAddress());
-			//commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);
+			commandList->DrawInstanced(32 * 32 * 6, 1, 0, 0);*/
 
 
 			//-------パーティクル時-------//
